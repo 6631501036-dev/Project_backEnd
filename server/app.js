@@ -37,21 +37,27 @@ app.get("/password/:pass", function (req, res) {
 
 // Register endpoint
 app.post('/register', function (req, res) {
-    const { username, password: rawPassword, repassword } = req.body;
+    const { username, email, password: rawPassword, repassword } = req.body;
     const role = 1; // Default role
 
     if (rawPassword !== repassword) {
         return res.status(400).send('Passwords do not match');
     }
 
-    const checkUsernameSql = "SELECT username FROM user WHERE username = ?";
-    con.query(checkUsernameSql, [username], function (err, result) {
+    // Check if username or email already exists
+    const checkExistingSql = "SELECT username, email FROM user WHERE username = ? OR email = ?";
+    con.query(checkExistingSql, [username, email], function (err, result) {
         if (err) {
             console.error(err);
             return res.status(500).send('Internal Server Error');
         }
         if (result.length > 0) {
-            return res.status(409).send('Username already exists');
+            if (result.some(user => user.username === username)) {
+                return res.status(409).send('Username already exists');
+            }
+            if (result.some(user => user.email === email)) {
+                return res.status(409).send('Email already exists');
+            }
         }
 
         bcrypt.hash(rawPassword, 10, function (err, hash) {
@@ -59,8 +65,8 @@ app.post('/register', function (req, res) {
                 return res.status(500).send('Internal Server Error');
             }
 
-            const insertUserSql = "INSERT INTO user (username, password, role) VALUES (?, ?, ?)";
-            con.query(insertUserSql, [username, hash, role], function (err, result) {
+            const insertUserSql = "INSERT INTO user (username, email, password, role) VALUES (?, ?, ?, ?)";
+            con.query(insertUserSql, [username, email, hash, role], function (err, result) {
                 if (err) {
                     console.error(err);
                     return res.status(500).send('Internal Server Error');
@@ -74,7 +80,7 @@ app.post('/register', function (req, res) {
 // Login endpoint
 app.post('/login', function (req, res) {
     const { username, password: raw } = req.body;
-    const sql = "SELECT user_id, username, password, role FROM user WHERE username=?";
+    const sql = "SELECT user_id, username, email, password, role FROM user WHERE username=?";
 
     con.query(sql, [username], function (err, result) {
         if (err) {
