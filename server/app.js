@@ -35,40 +35,41 @@ app.get("/password/:pass", function (req, res) {
     });
 });
 
-// Register endpoint
+// Register endpoint บอสแก้
 app.post('/register', function (req, res) {
-    const { username, password: rawPassword, repassword } = req.body;
-    const role = 1; // Default role
+  const { username, email, password: rawPassword, repassword } = req.body;
+  const role = 1; // Default role: student
 
-    if (rawPassword !== repassword) {
-        return res.status(400).send('Passwords do not match');
-    }
+  if (rawPassword !== repassword) {
+    return res.status(400).send('Passwords do not match');
+  }//400 client ส่งมา ข้อมูลไม่ถูกต้อง
 
-    const checkUsernameSql = "SELECT username FROM user WHERE username = ?";
-    con.query(checkUsernameSql, [username], function (err, result) {
+  const checkUsernameSql = "SELECT username FROM user WHERE username = ?";
+  con.query(checkUsernameSql, [username], function (err, result) {
+    if (err) {
+      console.error(err);
+      return res.status(500).send('Internal Server Error');
+    }//500 server มีปัญหา
+    if (result.length > 0) {
+      return res.status(409).send('Username already exists');
+    } //client ส่งมา ขัดแย้งกับข้อมูลที่มีอยู่ในระบบแล้ว
+
+    bcrypt.hash(rawPassword, 10, function (err, hash) {
+      if (err) {
+        return res.status(500).send('Internal Server Error');
+      }
+
+      const insertUserSql =
+        "INSERT INTO user (email, username, password, role) VALUES (?, ?, ?, ?)";
+      con.query(insertUserSql, [email, username, hash, role], function (err) {
         if (err) {
-            console.error(err);
-            return res.status(500).send('Internal Server Error');
+          console.error(err);
+          return res.status(500).send('Internal Server Error');
         }
-        if (result.length > 0) {
-            return res.status(409).send('Username already exists');
-        }
-
-        bcrypt.hash(rawPassword, 10, function (err, hash) {
-            if (err) {
-                return res.status(500).send('Internal Server Error');
-            }
-
-            const insertUserSql = "INSERT INTO user (username, password, role) VALUES (?, ?, ?)";
-            con.query(insertUserSql, [username, hash, role], function (err, result) {
-                if (err) {
-                    console.error(err);
-                    return res.status(500).send('Internal Server Error');
-                }
-                res.status(200).send('User registered successfully');
-            });
-        });
+        res.status(200).send('User registered successfully');
+      });
     });
+  });
 });
 
 // Login endpoint
@@ -629,7 +630,7 @@ app.put("/staff/returnAsset/:request_id", (req, res) => {
 });
 
 // Serve specific pages
-app.get("/register", (req, res) => res.sendFile(path.join(__dirname, "views/register.html")));
+app.get("/register", (req, res) => res.sendFile(path.join(__dirname, "")));
 app.get("/login", (req, res) => res.sendFile(path.join(__dirname, "views/login.html")));
 app.get("/logout", (req, res) => res.sendFile(path.join(__dirname, "views/index.html")));
 // borrower
@@ -656,7 +657,8 @@ app.get('/views/:role/home.html', function (req, res) {
     res.sendFile(filePath);
 });
 
+//=================== Starting server =======================
 const PORT = 3000;
 app.listen(PORT, () => {
-    console.log(`Server is running on port ${PORT}`);
+   console.log(`Server is running on port ${PORT}`);
 });
