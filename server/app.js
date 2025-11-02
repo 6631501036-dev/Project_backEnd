@@ -75,7 +75,7 @@ app.post('/register', function (req, res) {
 // Login endpoint
 app.post('/login', function (req, res) {
     const { username, password: raw } = req.body;
-    const sql = "SELECT user_id, username, password, role FROM user WHERE username=?";
+    const sql = "SELECT user_id, username, email, password, role FROM user WHERE username=?";
 
     con.query(sql, [username], function (err, result) {
         if (err) {
