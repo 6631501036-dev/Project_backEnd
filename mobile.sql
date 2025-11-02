@@ -3,7 +3,7 @@
 -- https://www.phpmyadmin.net/
 --
 -- Host: 127.0.0.1
--- Generation Time: Oct 26, 2025 at 04:33 AM
+-- Generation Time: Nov 02, 2025 at 08:28 AM
 -- Server version: 10.4.32-MariaDB
 -- PHP Version: 8.2.12
 
@@ -51,13 +51,23 @@ CREATE TABLE `request_log` (
   `lender_id` smallint(6) UNSIGNED DEFAULT NULL,
   `approval_date` date DEFAULT NULL,
   `staff_id` smallint(6) UNSIGNED DEFAULT NULL,
-  `return_status` enum('Not Returned','Returned','','') DEFAULT NULL,
+  `return_status` enum('Not Returned','Requested Return','Returned') DEFAULT 'Not Returned',
   `actual_return_date` date DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 --
 -- Triggers `request_log`
 --
+DELIMITER $$
+CREATE TRIGGER `after_asset_return` AFTER UPDATE ON `request_log` FOR EACH ROW BEGIN
+    IF NEW.return_status = 'Returned' THEN
+        UPDATE asset
+        SET asset_status = 'Available'
+        WHERE asset_id = NEW.asset_id;
+    END IF;
+END
+$$
+DELIMITER ;
 DELIMITER $$
 CREATE TRIGGER `after_request_approval` AFTER UPDATE ON `request_log` FOR EACH ROW BEGIN
     -- Check if the approval_status is 'Approved'
