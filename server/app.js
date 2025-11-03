@@ -8,19 +8,19 @@ const app = express();
 
 // Middleware
 app.use("/public", express.static(path.join(__dirname, "public")));
+app.use("/asset/image", express.static(path.join(__dirname, "asset/image"))); // serve images
 app.use(express.json());
 app.use(express.urlencoded({ extended: true })); // รองรับ form data
 
 const storage = multer.diskStorage({
-    destination: (req, file, cb) => {
-        cb(null, "uploads/"); // Ensure this folder exists
-    },
-    filename: (req, file, cb) => {
-        cb(null, Date.now() + path.extname(file.originalname)); // Unique filename
-    }
+  destination: (req, file, cb) => {
+    cb(null, "asset/image/"); // save to asset/image folder
+  },
+  filename: (req, file, cb) => {
+    cb(null, Date.now() + path.extname(file.originalname)); // unique filename
+  }
 });
-
-const upload = multer({ storage: storage });
+const upload = multer({ storage });
 
 // Hash Password
 app.get("/password/:pass", function (req, res) {
