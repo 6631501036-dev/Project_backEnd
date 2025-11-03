@@ -559,7 +559,13 @@ app.put("/staff/returnAsset/:request_id", (req, res) => {
         }
 
         // Step 1: Get asset_id from request_log
-        const getAssetQuery = "SELECT asset_id FROM request_log WHERE request_id = ? AND approval_status = 'Approved' AND return_status IS NULL";
+        const getAssetQuery = `
+            SELECT asset_id 
+            FROM request_log 
+            WHERE request_id = ? 
+              AND approval_status = 'Approved' 
+              AND return_status IS NULL
+        `;
 
         con.query(getAssetQuery, [request_id], (err, result) => {
             if (err) {
@@ -571,7 +577,7 @@ app.put("/staff/returnAsset/:request_id", (req, res) => {
 
             if (result.length === 0) {
                 return con.rollback(() => {
-                    res.status(400).send("Request not found, already returned, or not approved");
+                    res.status(400).send("Return request not found or already processed");
                 });
             }
 
@@ -579,8 +585,10 @@ app.put("/staff/returnAsset/:request_id", (req, res) => {
 
             // Step 2: Update request_log - Mark as Returned
             const updateRequestQuery = `
-                UPDATE request_log 
-                SET return_status = 'Returned', staff_id = ?, actual_return_date = NOW()
+                UPDATE request_log
+                SET return_status = 'Returned',
+                    staff_id = ?,
+                    actual_return_date = NOW()
                 WHERE request_id = ? AND return_status IS NULL
             `;
 
@@ -600,8 +608,8 @@ app.put("/staff/returnAsset/:request_id", (req, res) => {
 
                 // Step 3: Update asset_status to "Available"
                 const updateAssetQuery = `
-                    UPDATE asset 
-                    SET asset_status = 'Available' 
+                    UPDATE asset
+                    SET asset_status = 'Available'
                     WHERE asset_id = ?
                 `;
 
@@ -621,7 +629,7 @@ app.put("/staff/returnAsset/:request_id", (req, res) => {
                             });
                         }
 
-                        res.json({ message: "Asset returned successfully, marked as Available" });
+                        res.json({ message: "Asset return approved successfully" });
                     });
                 });
             });
