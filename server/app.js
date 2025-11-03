@@ -142,58 +142,44 @@ app.post("/borrower/borrow", (req, res) => {
         // Step 1: Check if asset is available
         const checkAssetSql = "SELECT asset_status FROM asset WHERE asset_id = ?";
         con.query(checkAssetSql, [asset_id], (err, result) => {
-            if (err) {
-                return con.rollback(() => {
-                    console.error("Database error:", err);
-                    res.status(500).json({ success: false, message: "Internal Server Error" });
-                });
-            }
-            if (result.length === 0) {
-                return con.rollback(() => {
-                    res.status(404).json({ success: false, message: "Asset not found" });
-                });
-            }
-            if (result[0].asset_status !== "Available") {
-                return con.rollback(() => {
-                    res.status(409).json({ success: false, message: "Asset unavailable" });
-                });
-            }
+            if (err) return con.rollback(() => res.status(500).json({ success: false, message: "Database error" }));
+            if (result.length === 0) return con.rollback(() => res.status(404).json({ success: false, message: "Asset not found" }));
+            if (result[0].asset_status !== "Available") return con.rollback(() => res.status(409).json({ success: false, message: "Asset unavailable" }));
 
-            // Step 2: Insert borrow request
             const insertRequestSql = `
                 INSERT INTO request_log (borrower_id, asset_id, borrow_date, return_date, approval_status)
                 VALUES (?, ?, ?, ?, 'Pending')`;
 
             con.query(insertRequestSql, [borrower_id, asset_id, borrow_date, return_date], (err, result) => {
-                if (err) {
-                    return con.rollback(() => {
-                        console.error("Database error:", err);
-                        res.status(500).json({ success: false, message: "Internal Server Error" });
-                    });
-                }
+                if (err) return con.rollback(() => res.status(500).json({ success: false, message: "Database error" }));
 
-                // Step 3: Update asset_status to "Pending"
+                const requestId = result.insertId;
+
                 const updateAssetSql = "UPDATE asset SET asset_status = 'Pending' WHERE asset_id = ?";
                 con.query(updateAssetSql, [asset_id], (err, updateResult) => {
-                    if (err) {
-                        return con.rollback(() => {
-                            console.error("Database error:", err);
-                            res.status(500).json({ success: false, message: "Internal Server Error" });
-                        });
-                    }
+                    if (err) return con.rollback(() => res.status(500).json({ success: false, message: "Database error" }));
 
                     con.commit((err) => {
-                        if (err) {
-                            return con.rollback(() => {
-                                console.error("Transaction commit error:", err);
-                                res.status(500).json({ success: false, message: "Internal Server Error" });
-                            });
-                        }
+                        if (err) return con.rollback(() => res.status(500).json({ success: false, message: "Commit error" }));
 
-                        res.status(200).json({
-                            success: true,
-                            message: "Borrow request submitted successfully",
-                            request_id: result.insertId
+                        // Return the asset with request_id included
+                        const getAssetSql = `
+                            SELECT a.asset_id, a.asset_name, a.asset_status, a.description, a.image,
+                                   r.request_id
+                            FROM asset a
+                            LEFT JOIN request_log r
+                              ON a.asset_id = r.asset_id AND r.borrower_id = ?
+                              AND r.approval_status = 'Pending'
+                            WHERE a.asset_id = ?
+                        `;
+                        con.query(getAssetSql, [borrower_id, asset_id], (err, assets) => {
+                            if (err) return res.status(500).json({ success: false, message: "Database error" });
+
+                            res.status(200).json({
+                                success: true,
+                                message: "Borrow request submitted successfully",
+                                asset: assets[0]
+                            });
                         });
                     });
                 });
