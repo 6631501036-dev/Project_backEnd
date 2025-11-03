@@ -637,6 +637,31 @@ app.put("/staff/returnAsset/:request_id", (req, res) => {
     });
 });
 
+// Return Asset by Student
+app.put("/student/returnAsset/:request_id", (req, res) => {
+    const { request_id } = req.params;
+
+    // Step 1: Mark the request as "Requested Return" in request_log
+    const updateRequestQuery = `
+        UPDATE request_log
+        SET return_status = 'Requested Return'
+        WHERE request_id = ? AND return_status = 'Not Returned'
+    `;
+
+    con.query(updateRequestQuery, [request_id], (err, result) => {
+        if (err) {
+            console.error("Error requesting return:", err);
+            return res.status(500).send("Internal Server Error");
+        }
+
+        if (result.affectedRows === 0) {
+            return res.status(400).send("Return already requested or not allowed");
+        }
+
+        res.json({ message: "Return request submitted successfully" });
+    });
+});
+
 // Serve specific pages
 app.get("/register", (req, res) => res.sendFile(path.join(__dirname, "")));
 app.get("/login", (req, res) => res.sendFile(path.join(__dirname, "views/login.html")));
