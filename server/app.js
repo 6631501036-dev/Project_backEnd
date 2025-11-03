@@ -564,7 +564,7 @@ app.put("/staff/returnAsset/:request_id", (req, res) => {
             FROM request_log 
             WHERE request_id = ? 
               AND approval_status = 'Approved' 
-              AND return_status IS NULL
+              AND return_status = 'Requested Return'
         `;
 
         con.query(getAssetQuery, [request_id], (err, result) => {
@@ -589,7 +589,7 @@ app.put("/staff/returnAsset/:request_id", (req, res) => {
                 SET return_status = 'Returned',
                     staff_id = ?,
                     actual_return_date = NOW()
-                WHERE request_id = ? AND return_status IS NULL
+                WHERE request_id = ? AND return_status = 'Requested Return'
             `;
 
             con.query(updateRequestQuery, [staff_id, request_id], (err, result) => {
