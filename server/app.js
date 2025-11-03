@@ -13,12 +13,12 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true })); // รองรับ form data
 
 const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    cb(null, "asset/image/"); // save to asset/image folder
-  },
-  filename: (req, file, cb) => {
-    cb(null, Date.now() + path.extname(file.originalname)); // unique filename
-  }
+    destination: (req, file, cb) => {
+        cb(null, "asset/image/"); // save to asset/image folder
+    },
+    filename: (req, file, cb) => {
+        cb(null, Date.now() + path.extname(file.originalname)); // unique filename
+    }
 });
 const upload = multer({ storage });
 
@@ -37,39 +37,39 @@ app.get("/password/:pass", function (req, res) {
 
 // Register endpoint บอสแก้
 app.post('/register', function (req, res) {
-  const { username, email, password: rawPassword, repassword } = req.body;
-  const role = 1; // Default role: student
+    const { username, email, password: rawPassword, repassword } = req.body;
+    const role = 1; // Default role: student
 
-  if (rawPassword !== repassword) {
-    return res.status(400).send('Passwords do not match');
-  }//400 client ส่งมา ข้อมูลไม่ถูกต้อง
+    if (rawPassword !== repassword) {
+        return res.status(400).send('Passwords do not match');
+    }//400 client ส่งมา ข้อมูลไม่ถูกต้อง
 
-  const checkUsernameSql = "SELECT username FROM user WHERE username = ?";
-  con.query(checkUsernameSql, [username], function (err, result) {
-    if (err) {
-      console.error(err);
-      return res.status(500).send('Internal Server Error');
-    }//500 server มีปัญหา
-    if (result.length > 0) {
-      return res.status(409).send('Username already exists');
-    } //client ส่งมา ขัดแย้งกับข้อมูลที่มีอยู่ในระบบแล้ว
-
-    bcrypt.hash(rawPassword, 10, function (err, hash) {
-      if (err) {
-        return res.status(500).send('Internal Server Error');
-      }
-
-      const insertUserSql =
-        "INSERT INTO user (email, username, password, role) VALUES (?, ?, ?, ?)";
-      con.query(insertUserSql, [email, username, hash, role], function (err) {
+    const checkUsernameSql = "SELECT username FROM user WHERE username = ?";
+    con.query(checkUsernameSql, [username], function (err, result) {
         if (err) {
-          console.error(err);
-          return res.status(500).send('Internal Server Error');
-        }
-        res.status(200).send('User registered successfully');
-      });
+            console.error(err);
+            return res.status(500).send('Internal Server Error');
+        }//500 server มีปัญหา
+        if (result.length > 0) {
+            return res.status(409).send('Username already exists');
+        } //client ส่งมา ขัดแย้งกับข้อมูลที่มีอยู่ในระบบแล้ว
+
+        bcrypt.hash(rawPassword, 10, function (err, hash) {
+            if (err) {
+                return res.status(500).send('Internal Server Error');
+            }
+
+            const insertUserSql =
+                "INSERT INTO user (email, username, password, role) VALUES (?, ?, ?, ?)";
+            con.query(insertUserSql, [email, username, hash, role], function (err) {
+                if (err) {
+                    console.error(err);
+                    return res.status(500).send('Internal Server Error');
+                }
+                res.status(200).send('User registered successfully');
+            });
+        });
     });
-  });
 });
 
 // Login endpoint
@@ -586,10 +586,14 @@ app.put("/staff/returnAsset/:request_id", (req, res) => {
             // Step 2: Update request_log - Mark as Returned
             const updateRequestQuery = `
                 UPDATE request_log
-                SET return_status = 'Returned',
-                    staff_id = ?,
-                    actual_return_date = NOW()
-                WHERE request_id = ? AND return_status = 'Requested Return'
+                    SET return_status = 'Returned', 
+                        staff_id = ?, 
+                        actual_return_date = NOW()
+                WHERE request_id = ? AND return_status = 'Requested Return';
+
+                UPDATE asset
+                    SET asset_status = 'Available'
+                WHERE asset_id = ?;
             `;
 
             con.query(updateRequestQuery, [staff_id, request_id], (err, result) => {
@@ -644,8 +648,8 @@ app.put("/student/returnAsset/:request_id", (req, res) => {
     // Step 1: Mark the request as "Requested Return" in request_log
     const updateRequestQuery = `
         UPDATE request_log
-        SET return_status = 'Requested Return'
-        WHERE request_id = ? AND return_status = 'Not Returned'
+            SET return_status = 'Requested Return'
+        WHERE request_id = ? AND return_status = 'Not Returned';
     `;
 
     con.query(updateRequestQuery, [request_id], (err, result) => {
@@ -693,5 +697,5 @@ app.get('/views/:role/home.html', function (req, res) {
 //=================== Starting server =======================
 const PORT = 3000;
 app.listen(PORT, () => {
-   console.log(`Server is running on port ${PORT}`);
+    console.log(`Server is running on port ${PORT}`);
 });
