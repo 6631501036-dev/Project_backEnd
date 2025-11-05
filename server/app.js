@@ -20,12 +20,12 @@ app.use("/public/image", express.static(path.join(__dirname, "public/image")));
 // =======================================================
 // 
 const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    cb(null, "public/image"); // เก็บในโฟลเดอร์ asset/image
-  },
-  filename: (req, file, cb) => {
-    cb(null, Date.now() + path.extname(file.originalname));
-  }
+    destination: (req, file, cb) => {
+        cb(null, "public/image"); // เก็บในโฟลเดอร์ asset/image
+    },
+    filename: (req, file, cb) => {
+        cb(null, Date.now() + path.extname(file.originalname));
+    }
 });
 const upload = multer({ storage: storage });
 
@@ -33,11 +33,11 @@ const upload = multer({ storage: storage });
 //  🔐 Password Hash Tester
 // =======================================================
 app.get("/password/:pass", (req, res) => {
-  const password = req.params.pass;
-  bcrypt.hash(password, 10, (err, hash) => {
-    if (err) return res.status(500).send("Hashing error");
-    res.send(hash);
-  });
+    const password = req.params.pass;
+    bcrypt.hash(password, 10, (err, hash) => {
+        if (err) return res.status(500).send("Hashing error");
+        res.send(hash);
+    });
 });
 
 // =======================================================
@@ -132,21 +132,21 @@ app.post('/login', function (req, res) {
 // 🟢 USER INFO
 ////////////////////////////////////////////////////////////
 app.get("/api/user/:userId", (req, res) => {
-  const userId = req.params.userId;
-  const sql = "SELECT username FROM user WHERE user_id = ?";
-  con.query(sql, [userId], (err, results) => {
-    if (err) return res.status(500).json({ error: "Database error" });
-    if (results.length === 0) return res.status(404).json({ error: "User not found" });
-    res.json(results[0]);
-  });
+    const userId = req.params.userId;
+    const sql = "SELECT username FROM user WHERE user_id = ?";
+    con.query(sql, [userId], (err, results) => {
+        if (err) return res.status(500).json({ error: "Database error" });
+        if (results.length === 0) return res.status(404).json({ error: "User not found" });
+        res.json(results[0]);
+    });
 });
 
 ////////////////////////////////////////////////////////////
 // 🟢 ASSET (Student Home)
 ////////////////////////////////////////////////////////////
 app.get("/api/student/asset", (req, res) => {
-  const borrowerId = 1; // TODO: replace with actual user_id from session
-  const sql = `
+    const borrowerId = 1; // TODO: replace with actual user_id from session
+    const sql = `
     SELECT 
       a.asset_id,
       a.asset_name,
@@ -161,88 +161,89 @@ app.get("/api/student/asset", (req, res) => {
       AND r.borrower_id = ?
       AND r.approval_status = 'Approved'
   `;
-  con.query(sql, [borrowerId], (err, results) => {
-    if (err) return res.status(500).json({ success: false, message: "Database error" });
-    const assets = results.map((row) => ({
-      asset_id: row.asset_id,
-      asset_name: row.asset_name,
-      asset_status: row.asset_status || 'Available',
-      image: row.image || 'uploads/default.jpg',
-      request_id: row.request_id || null,
-      borrower_id: row.borrower_id || null,
-      return_status: row.return_status || 'Not Returned',
-    }));
-    res.json({ success: true, assets });
-  });
+    con.query(sql, [borrowerId], (err, results) => {
+        if (err) return res.status(500).json({ success: false, message: "Database error" });
+        const assets = results.map((row) => ({
+            asset_id: row.asset_id,
+            asset_name: row.asset_name,
+            asset_status: row.asset_status || 'Available',
+            image: row.image || 'uploads/default.jpg',
+            request_id: row.request_id || null,
+            borrower_id: row.borrower_id || null,
+            return_status: row.return_status || 'Not Returned',
+        }));
+        res.json({ success: true, assets });
+    });
 });
 
 ////////////////////////////////////////////////////////////
 // 🟢 BORROW REQUEST
 ////////////////////////////////////////////////////////////
 app.post("/api/student/borrow", (req, res) => {
-  const { borrower_id, asset_id, borrow_date, return_date } = req.body;
-  if (!borrower_id || !asset_id || !borrow_date || !return_date)
-    return res.status(400).json({ success: false, message: "Missing required fields" });
+    const { borrower_id, asset_id, borrow_date, return_date } = req.body;
+    if (!borrower_id || !asset_id || !borrow_date || !return_date)
+        return res.status(400).json({ success: false, message: "Missing required fields" });
 
-  con.beginTransaction((err) => {
-    if (err) return res.status(500).json({ success: false, message: "Transaction error" });
+    con.beginTransaction((err) => {
+        if (err) return res.status(500).json({ success: false, message: "Transaction error" });
 
-    const checkSql = "SELECT asset_status FROM asset WHERE asset_id = ?";
-    con.query(checkSql, [asset_id], (err, result) => {
-      if (err) return con.rollback(() => res.status(500).json({ message: "Database error" }));
-      if (result.length === 0)
-        return con.rollback(() => res.status(404).json({ message: "Asset not found" }));
-      if (result[0].asset_status !== "Available")
-        return con.rollback(() => res.status(409).json({ message: "Asset unavailable" }));
+        const checkSql = "SELECT asset_status FROM asset WHERE asset_id = ?";
+        con.query(checkSql, [asset_id], (err, result) => {
+            if (err) return con.rollback(() => res.status(500).json({ message: "Database error" }));
+            if (result.length === 0)
+                return con.rollback(() => res.status(404).json({ message: "Asset not found" }));
+            if (result[0].asset_status !== "Available")
+                return con.rollback(() => res.status(409).json({ message: "Asset unavailable" }));
 
-      const insertSql = `
+            const insertSql = `
         INSERT INTO request_log (borrower_id, asset_id, borrow_date, return_date, approval_status, return_status)
         VALUES (?, ?, ?, ?, 'Pending', 'Not Returned')
       `;
-      con.query(insertSql, [borrower_id, asset_id, borrow_date, return_date], (err) => {
-        if (err) return con.rollback(() => res.status(500).json({ message: "Insert error" }));
+            con.query(insertSql, [borrower_id, asset_id, borrow_date, return_date], (err) => {
+                if (err) return con.rollback(() => res.status(500).json({ message: "Insert error" }));
 
-        const updateSql = "UPDATE asset SET asset_status = 'Pending' WHERE asset_id = ?";
-        con.query(updateSql, [asset_id], (err) => {
-          if (err) return con.rollback(() => res.status(500).json({ message: "Update error" }));
-          con.commit((err) => {
-            if (err) return con.rollback(() => res.status(500).json({ message: "Commit error" }));
-            res.status(200).json({ success: true, message: "Borrow request submitted successfully" });
-          });
+                const updateSql = "UPDATE asset SET asset_status = 'Pending' WHERE asset_id = ?";
+                con.query(updateSql, [asset_id], (err) => {
+                    if (err) return con.rollback(() => res.status(500).json({ message: "Update error" }));
+                    con.commit((err) => {
+                        if (err) return con.rollback(() => res.status(500).json({ message: "Commit error" }));
+                        res.status(200).json({ success: true, message: "Borrow request submitted successfully" });
+                    });
+                });
+            });
         });
-      });
     });
-  });
 });
 
 ////////////////////////////////////////////////////////////
 // 🟢 RETURN REQUEST (Student)
 ////////////////////////////////////////////////////////////
 app.put("/api/student/returnAsset/:request_id", (req, res) => {
-  const { request_id } = req.params;
-  const preCheck = `
+    const { request_id } = req.params;
+    const preCheck = `
     SELECT approval_status, return_status
     FROM request_log
     WHERE request_id = ?
   `;
-  con.query(preCheck, [request_id], (err, rows) => {
-    if (err) return res.status(500).json({ message: "Database error" });
-    if (rows.length === 0) return res.status(404).json({ message: "Request not found" });
+    con.query(preCheck, [request_id], (err, rows) => {
+        if (err) return res.status(500).json({ message: "Database error" });
+        if (rows.length === 0) return res.status(404).json({ message: "Request not found" });
 
-    const { approval_status, return_status } = rows[0];
-    if (approval_status !== "Approved" || return_status !== "Not Returned")
-      return res.status(400).json({ message: "Return not allowed" });
+        const { approval_status, return_status } = rows[0];
+        if (approval_status !== "Approved" || return_status !== "Not Returned")
+            return res.status(400).json({ message: "Return not allowed" });
 
-    const updateSql = `
+        const updateSql = `
       UPDATE request_log
       SET return_status = 'Requested Return'
       WHERE request_id = ? AND approval_status = 'Approved' AND return_status = 'Not Returned'
     `;
-    con.query(updateSql, [request_id], (err, result) => {
-      if (err) return res.status(500).json({ message: "Update failed" });
-      if (result.affectedRows === 0)
-        return res.status(400).json({ message: "Return already requested" });
-      res.json({ message: "Return request submitted successfully" });
+        con.query(updateSql, [request_id], (err, result) => {
+            if (err) return res.status(500).json({ message: "Update failed" });
+            if (result.affectedRows === 0)
+                return res.status(400).json({ message: "Return already requested" });
+            res.json({ message: "Return request submitted successfully" });
+        });
     });
 });
 
@@ -250,8 +251,8 @@ app.put("/api/student/returnAsset/:request_id", (req, res) => {
 // 🟢 STATUS PAGE
 ////////////////////////////////////////////////////////////
 app.get("/api/student/status/:userId", (req, res) => {
-  const userId = req.params.userId;
-  const sql = `
+    const userId = req.params.userId;
+    const sql = `
     SELECT 
       rl.request_id,
       rl.borrow_date AS request_date,
@@ -272,18 +273,18 @@ app.get("/api/student/status/:userId", (req, res) => {
     ORDER BY rl.borrow_date DESC
     LIMIT 1
   `;
-  con.query(sql, [userId], (err, results) => {
-    if (err) return res.status(500).json({ error: "Database error" });
-    res.json(results.length > 0 ? results[0] : null);
-  });
+    con.query(sql, [userId], (err, results) => {
+        if (err) return res.status(500).json({ error: "Database error" });
+        res.json(results.length > 0 ? results[0] : null);
+    });
 });
 
 ////////////////////////////////////////////////////////////
 // 🟢 HISTORY PAGE
 ////////////////////////////////////////////////////////////
 app.get("/api/student/history/:userId", (req, res) => {
-  const userId = req.params.userId;
-  const sql = `
+    const userId = req.params.userId;
+    const sql = `
     SELECT 
       r.request_id AS id,
       a.asset_name AS name,
@@ -295,10 +296,10 @@ app.get("/api/student/history/:userId", (req, res) => {
     JOIN asset a ON r.asset_id = a.asset_id
     WHERE r.staff_id = ?;
   `;
-  con.query(sql, [userId], (err, results) => {
-    if (err) return res.status(500).json({ error: "Database error" });
-    res.json(results);
-  });
+    con.query(sql, [userId], (err, results) => {
+        if (err) return res.status(500).json({ error: "Database error" });
+        res.json(results);
+    });
 });
 
 
@@ -306,68 +307,68 @@ app.get("/api/student/history/:userId", (req, res) => {
 //  🟢 STAFF API SECTION 
 // =======================================================
 app.post("/staff/addAsset", upload.single("image"), (req, res) => {
-  const { name, description } = req.body;
-  const imagePath = req.file ? `/public/image/${req.file.filename}` : "/public/image/default.jpg";
+    const { name, description } = req.body;
+    const imagePath = req.file ? `/public/image/${req.file.filename}` : "/public/image/default.jpg";
 
-  if (!name || !description) {
-    return res.status(400).json({ success: false, message: "Missing fields" });
-  }
+    if (!name || !description) {
+        return res.status(400).json({ success: false, message: "Missing fields" });
+    }
 
-  const sql = `
+    const sql = `
     INSERT INTO asset (asset_name, asset_status, description, image)
     VALUES (?, 'Available', ?, ?)
   `;
-  con.query(sql, [name, description, imagePath], (err, result) => {
-    if (err) {
-      console.error("Database Error:", err);
-      return res.status(500).json({ success: false, message: "Database error" });
-    }
-    res.json({
-      success: true,
-      message: "Asset added successfully",
-      asset_id: result.insertId,
-      image: imagePath
+    con.query(sql, [name, description, imagePath], (err, result) => {
+        if (err) {
+            console.error("Database Error:", err);
+            return res.status(500).json({ success: false, message: "Database error" });
+        }
+        res.json({
+            success: true,
+            message: "Asset added successfully",
+            asset_id: result.insertId,
+            image: imagePath
+        });
     });
-  });
 });
 
 
 // Edit Asset
 
 app.put("/staff/editAsset/:id", upload.single("image"), (req, res) => {
-  const assetId = req.params.id;
-  const { name, description } = req.body;
+    const assetId = req.params.id;
+    const { name, description } = req.body;
 
-  let updateFields = [];
-  let params = [];
+    let updateFields = [];
+    let params = [];
 
-  if (name) {
-    updateFields.push("asset_name = ?");
-    params.push(name);
-  }
-  if (description) {
-    updateFields.push("description = ?");
-    params.push(description);
-  }
-  if (req.file) {
-    updateFields.push("image = ?");
-    params.push(`/public/image/${req.file.filename}`);
-  }
-
-  if (updateFields.length === 0) {
-    return res.status(400).json({ success: false, message: "Nothing to update" });
-  }
-
-  const sql = `UPDATE asset SET ${updateFields.join(", ")} WHERE asset_id = ?`;
-  params.push(assetId);
-
-  con.query(sql, params, (err, result) => {
-    if (err) {
-      console.error("Database Error:", err);
-      return res.status(500).json({ success: false, message: "Database error" });
+    if (name) {
+        updateFields.push("asset_name = ?");
+        params.push(name);
     }
-    res.json({ success: true, message: "Asset updated successfully" });
-  });
+    if (description) {
+        updateFields.push("description = ?");
+        params.push(description);
+    }
+    if (req.file) {
+        updateFields.push("image = ?");
+        params.push(`/public/image/${req.file.filename}`);
+    }
+
+    if (updateFields.length === 0) {
+        return res.status(400).json({ success: false, message: "Nothing to update" });
+    }
+
+    const sql = `UPDATE asset SET ${updateFields.join(", ")} WHERE asset_id = ?`;
+    params.push(assetId);
+
+    con.query(sql, params, (err, result) => {
+        if (err) {
+            console.error("Database Error:", err);
+            return res.status(500).json({ success: false, message: "Database error" });
+        }
+        res.json({ success: true, message: "Asset updated successfully" });
+    });
 });
 
 app.put("/staff/editAsset/:asset_id/disable", (req, res) => {
@@ -445,26 +446,26 @@ app.put("/staff/editAsset/:asset_id/enable", (req, res) => {
 
 // DELETE Asset
 app.delete("/staff/deleteAsset/:id", (req, res) => {
-  const assetId = req.params.id;
-  const sql = "DELETE FROM asset WHERE asset_id = ?";
+    const assetId = req.params.id;
+    const sql = "DELETE FROM asset WHERE asset_id = ?";
 
-  con.query(sql, [assetId], (err, result) => {
-    if (err) {
-      console.error("Database Error:", err);
-      return res.status(500).json({ success: false, message: "Database error" });
-    }
-    if (result.affectedRows === 0) {
-      return res.status(404).json({ success: false, message: "Asset not found" });
-    }
-    res.json({ success: true, message: "Asset deleted successfully" });
-  });
+    con.query(sql, [assetId], (err, result) => {
+        if (err) {
+            console.error("Database Error:", err);
+            return res.status(500).json({ success: false, message: "Database error" });
+        }
+        if (result.affectedRows === 0) {
+            return res.status(404).json({ success: false, message: "Asset not found" });
+        }
+        res.json({ success: true, message: "Asset deleted successfully" });
+    });
 });
 
 // เพิ่มมาใหม่ Get Requests for Staff
 app.get("/staff/request/:staff_id", (req, res) => {
-  const staffId = req.params.staff_id;
+    const staffId = req.params.staff_id;
 
-  const sql = `
+    const sql = `
     SELECT 
       r.request_id AS id,
       a.asset_name AS name,
@@ -480,11 +481,11 @@ app.get("/staff/request/:staff_id", (req, res) => {
 
 //get all staff
 app.get("/staff/assets", (req, res) => {
-  const sql = "SELECT * FROM asset";
-  con.query(sql, (err, result) => {
-    if (err) return res.status(500).json({ success: false, message: "Database error" });
-    res.json({ success: true, assets: result });
-  });
+    const sql = "SELECT * FROM asset";
+    con.query(sql, (err, result) => {
+        if (err) return res.status(500).json({ success: false, message: "Database error" });
+        res.json({ success: true, assets: result });
+    });
 });
 
 
@@ -758,5 +759,5 @@ app.put("/lender/borrowingRequest/:request_id/reject", (req, res) => {
 // =======================================================
 const PORT = 3000;
 app.listen(PORT, "0.0.0.0", () => {
-  console.log(`✅ Server is running on port ${PORT}`);
+    console.log(`✅ Server is running on port ${PORT}`);
 });
