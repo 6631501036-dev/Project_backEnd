@@ -6,7 +6,6 @@ const multer = require("multer");
 const con = require("./config/db");
 const cors = require("cors");
 const app = express();
-const cors = require("cors");
 
 // Middleware
 app.use(cors());
