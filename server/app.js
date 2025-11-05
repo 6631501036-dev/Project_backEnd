@@ -4,24 +4,27 @@ const path = require("path");
 const bcrypt = require("bcrypt");
 const multer = require("multer");
 const con = require("./config/db");
-
 const app = express();
+const cors = require("cors");
 
 // Middleware
-app.use("/public", express.static(path.join(__dirname, "public")));
-app.use("/image", express.static(path.join(__dirname, "asset/image"))); // serve images
+app.use(cors());
 app.use(express.json());
-app.use(express.urlencoded({ extended: true })); // รองรับ form data
+app.use("/uploads", express.static(path.join(__dirname, "uploads")));
+app.use("/public/image", express.static(path.join(__dirname, "public/image")));
 
+// 🧩 Multer สำหรับรับรูปจาก Flutter
 const storage = multer.diskStorage({
-    destination: (req, file, cb) => {
-        cb(null, "asset/image/"); // save to asset/image folder
-    },
-    filename: (req, file, cb) => {
-        cb(null, Date.now() + path.extname(file.originalname)); // unique filename
-    }
+  destination: (req, file, cb) => {
+    cb(null, "public/image"); // เก็บในโฟลเดอร์ asset/image
+  },
+  filename: (req, file, cb) => {
+    cb(null, Date.now() + path.extname(file.originalname));
+  }
 });
-const upload = multer({ storage });
+const upload = multer({ storage: storage });
+
+
 
 // Hash Password
 app.get("/password/:pass", function (req, res) {
@@ -239,41 +242,34 @@ app.post("/borrower/borrow", (req, res) => {
     });
 });
 
-/*
-  Add Asset (staff) - unchanged behaviour but kept for completeness
-*/
-app.post("/staff/addAsset", (req, res) => {
-    const { name, description } = req.body;
-    if (!name || !description) {
-        return res.status(400).send('Name and description are required');
+
+//====================== Staff ===============================================
+
+// Add Asset
+app.post("/staff/addAsset", upload.single("image"), (req, res) => {
+  const { name, description } = req.body;
+  const imagePath = req.file ? `/public/image/${req.file.filename}` : "/public/image/default.jpg";
+
+  if (!name || !description) {
+    return res.status(400).json({ success: false, message: "Missing fields" });
+  }
+
+  const sql = `
+    INSERT INTO asset (asset_name, asset_status, description, image)
+    VALUES (?, 'Available', ?, ?)
+  `;
+  con.query(sql, [name, description, imagePath], (err, result) => {
+    if (err) {
+      console.error("Database Error:", err);
+      return res.status(500).json({ success: false, message: "Database error" });
     }
-    const checkAssetSql = "SELECT * FROM asset WHERE asset_name = ?";
-    con.query(checkAssetSql, [name], (err, result) => {
-        if (err) {
-            console.error("Database Error:", err);
-            return res.status(500).send('Internal Server Error');
-        }
-        if (result.length > 0) {
-            return res.status(409).send('Asset already exists');
-        }
-        const imageUrl = '/uploads/default.jpg';
-        const insertAssetSql = `
-            INSERT INTO asset (asset_name, asset_status, description, image) 
-            VALUES (?, 'Available', ?, ?)
-        `;
-        con.query(insertAssetSql, [name, description, imageUrl], (err, result) => {
-            if (err) {
-                console.error("Database Error:", err);
-                return res.status(500).send('Internal Server Error');
-            }
-            res.status(201).json({
-                asset_id: result.insertId,
-                name,
-                description,
-                imageUrl
-            });
-        });
+    res.json({
+      success: true,
+      message: "Asset added successfully",
+      asset_id: result.insertId,
+      image: imagePath
     });
+  });
 });
 
 /*
@@ -282,42 +278,46 @@ app.post("/staff/addAsset", (req, res) => {
 */
 
 // Edit Asset
-app.put("/staff/editAsset/:id", upload.single("image"), (req, res) => {
-    const assetId = req.params.id;
-    const { name, description } = req.body;
 
-    if (!name && !description && !req.file) {
-        return res.status(400).send('At least one field is required to update');
-    }
-
-    con.query("SELECT * FROM asset WHERE asset_id = ?", [assetId], (err, rows) => {
-        if (err) {
-            console.error("Database error:", err);
-            return res.status(500).send('Internal Server Error');
-        }
-        if (rows.length === 0) {
-            return res.status(404).send('Asset not found');
-        }
-        const currentAsset = rows[0];
-        const updatedName = name || currentAsset.asset_name;
-        const updatedDescription = description || currentAsset.description;
-        const updatedImage = req.file ? `/asset/image/${req.file.filename}` : currentAsset.image;
-
-        con.query(
-            "UPDATE asset SET asset_name = ?, description = ?, image = ? WHERE asset_id = ?",
-            [updatedName, updatedDescription, updatedImage, assetId],
-            (updateErr, result) => {
-                if (updateErr) {
-                    console.error("Database error:", updateErr);
-                    return res.status(500).send('Internal Server Error');
-                }
-                res.status(200).json({ message: `${updatedName} updated successfully` });
-            }
-        );
-    });
-});
 
 // Disable Asset
+app.put("/staff/editAsset/:id", upload.single("image"), (req, res) => {
+  const assetId = req.params.id;
+  const { name, description } = req.body;
+
+  let updateFields = [];
+  let params = [];
+
+  if (name) {
+    updateFields.push("asset_name = ?");
+    params.push(name);
+  }
+  if (description) {
+    updateFields.push("description = ?");
+    params.push(description);
+  }
+  if (req.file) {
+    updateFields.push("image = ?");
+    params.push(`/public/image/${req.file.filename}`);
+  }
+
+  if (updateFields.length === 0) {
+    return res.status(400).json({ success: false, message: "Nothing to update" });
+  }
+
+  const sql = `UPDATE asset SET ${updateFields.join(", ")} WHERE asset_id = ?`;
+  params.push(assetId);
+
+  con.query(sql, params, (err, result) => {
+    if (err) {
+      console.error("Database Error:", err);
+      return res.status(500).json({ success: false, message: "Database error" });
+    }
+    res.json({ success: true, message: "Asset updated successfully" });
+  });
+});
+
+
 app.put("/staff/editAsset/:asset_id/disable", (req, res) => {
     const assetId = req.params.asset_id;
     const getAssetNameSql = "SELECT asset_name FROM asset WHERE asset_id = ?";
@@ -383,7 +383,53 @@ app.put("/staff/editAsset/:asset_id/enable", (req, res) => {
     });
 });
 
-// Approve Request (lender)
+// DELETE Asset
+app.delete("/staff/deleteAsset/:id", (req, res) => {
+  const assetId = req.params.id;
+  const sql = "DELETE FROM asset WHERE asset_id = ?";
+
+  con.query(sql, [assetId], (err, result) => {
+    if (err) {
+      console.error("Database Error:", err);
+      return res.status(500).json({ success: false, message: "Database error" });
+    }
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ success: false, message: "Asset not found" });
+    }
+    res.json({ success: true, message: "Asset deleted successfully" });
+  });
+});
+
+// เพิ่มมาใหม่ Get Requests for Staff
+app.get("/staff/request/:staff_id", (req, res) => {
+  const staffId = req.params.staff_id;
+
+  const sql = `
+    SELECT 
+      r.request_id AS id,
+      a.asset_name AS name,
+      a.image AS imagePath,
+      r.borrow_date AS borrowDate,
+      r.return_date AS returnDate,
+      r.return_status AS returnStatus
+    FROM request_log r
+    JOIN asset a ON r.asset_id = a.asset_id
+    WHERE r.staff_id = ?;
+  `;
+});
+
+//get all staff
+app.get("/staff/assets", (req, res) => {
+  const sql = "SELECT * FROM asset";
+  con.query(sql, (err, result) => {
+    if (err) return res.status(500).json({ success: false, message: "Database error" });
+    res.json({ success: true, assets: result });
+  });
+});
+
+//====================== Lender ===============================================
+
+// Approve Request
 app.put("/lender/borrowingRequest/:request_id/approve", (req, res) => {
     const { request_id } = req.params;
     const { lender_id } = req.body;
