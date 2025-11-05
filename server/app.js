@@ -98,13 +98,16 @@ app.post('/login', function (req, res) {
 
             // Role Mapping
             const role = result[0].role;
-            const eachRoles = { 1: 'borrower', 2: 'staff', 3: 'lender' };
+            const eachRoles = { 1: 'student', 2: 'staff', 3: 'lender' };
             const eachRole = eachRoles[role];
 
             if (eachRole) {
                 res.status(200).json({
                     message: "User login successfully",
                     role: eachRole,
+                    username: result[0].username,
+                    email: result[0].email,
+                    user_id: result[0].user_id
                 });
             } else {
                 return res.status(401).send('Wrong username or password');
