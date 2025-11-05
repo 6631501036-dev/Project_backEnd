@@ -1,3 +1,4 @@
+// server/app.js
 const express = require("express");
 const path = require("path");
 const bcrypt = require("bcrypt");
@@ -5,10 +6,9 @@ const multer = require("multer");
 const con = require("./config/db");
 const cors = require("cors");
 const app = express();
+const cors = require("cors");
 
-// =======================================================
-//  🧩 Middleware
-// =======================================================
+// Middleware
 app.use(cors());
 app.use(express.json());
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));
@@ -107,13 +107,16 @@ app.post('/login', function (req, res) {
 
             // Role Mapping
             const role = result[0].role;
-            const eachRoles = { 1: 'borrower', 2: 'staff', 3: 'lender' };
+            const eachRoles = { 1: 'student', 2: 'staff', 3: 'lender' };
             const eachRole = eachRoles[role];
 
             if (eachRole) {
                 res.status(200).json({
                     message: "User login successfully",
                     role: eachRole,
+                    username: result[0].username,
+                    email: result[0].email,
+                    user_id: result[0].user_id
                 });
             } else {
                 return res.status(401).send('Wrong username or password');
@@ -121,7 +124,6 @@ app.post('/login', function (req, res) {
         });
     });
 });
-
 // =======================================================
 //  🟢 STUDENT API SECTION 
 // =======================================================
@@ -164,11 +166,11 @@ app.get("/api/student/asset", (req, res) => {
     const assets = results.map((row) => ({
       asset_id: row.asset_id,
       asset_name: row.asset_name,
-      asset_status: row.asset_status || "Available",
-      image: row.image || "uploads/default.jpg",
+      asset_status: row.asset_status || 'Available',
+      image: row.image || 'uploads/default.jpg',
       request_id: row.request_id || null,
       borrower_id: row.borrower_id || null,
-      return_status: row.return_status || "Not Returned",
+      return_status: row.return_status || 'Not Returned',
     }));
     res.json({ success: true, assets });
   });
@@ -242,7 +244,6 @@ app.put("/api/student/returnAsset/:request_id", (req, res) => {
         return res.status(400).json({ message: "Return already requested" });
       res.json({ message: "Return request submitted successfully" });
     });
-  });
 });
 
 ////////////////////////////////////////////////////////////
@@ -283,25 +284,16 @@ app.get("/api/student/status/:userId", (req, res) => {
 app.get("/api/student/history/:userId", (req, res) => {
   const userId = req.params.userId;
   const sql = `
-    SELECT
-      rl.request_id,
-      rl.approval_status AS request_status,
-      rl.return_status,
-      a.asset_name,
-      rl.borrow_date,
-      rl.return_date,
-      lender.username AS lender_name,
-      staff.username AS staff_name
-    FROM request_log rl
-    JOIN asset a ON rl.asset_id = a.asset_id
-    LEFT JOIN user lender ON rl.lender_id = lender.user_id
-    LEFT JOIN user staff ON rl.staff_id = staff.user_id
-    WHERE rl.borrower_id = ?
-      AND (
-        (rl.approval_status = 'Rejected')
-        OR (rl.approval_status = 'Approved' AND rl.return_status = 'Returned')
-      )
-    ORDER BY rl.return_date DESC
+    SELECT 
+      r.request_id AS id,
+      a.asset_name AS name,
+      a.image AS imagePath,
+      r.borrow_date AS borrowDate,
+      r.return_date AS returnDate,
+      r.return_status AS returnStatus
+    FROM request_log r
+    JOIN asset a ON r.asset_id = a.asset_id
+    WHERE r.staff_id = ?;
   `;
   con.query(sql, [userId], (err, results) => {
     if (err) return res.status(500).json({ error: "Database error" });
