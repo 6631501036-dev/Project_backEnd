@@ -7,6 +7,7 @@ const con = require("./config/db");
 const cors = require("cors");
 const app = express();
 
+
 // Middleware
 app.use(cors());
 app.use(express.json());
@@ -245,7 +246,6 @@ app.put("/api/student/returnAsset/:request_id", (req, res) => {
         });
     });
 });
-
 ////////////////////////////////////////////////////////////
 // 🟢 STATUS PAGE
 ////////////////////////////////////////////////////////////
