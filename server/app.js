@@ -141,12 +141,13 @@ app.get("/api/user/:userId", (req, res) => {
     });
 });
 
-////////////////////////////////////////////////////////////
-// 🟢 ASSET (Student Home)
-////////////////////////////////////////////////////////////
-app.get("/api/student/asset", (req, res) => {
-    const borrowerId = 1; // TODO: replace with actual user_id from session
-    const sql = `
+
+// ----------------- Fix /asset to accept borrower_id -----------------
+app.get("/asset", (req, res) => {
+  // อ่าน borrower_id จาก query string (optional)
+  const borrowerId = req.query.borrower_id ? Number(req.query.borrower_id) : null;
+
+  const query = `
     SELECT 
       a.asset_id,
       a.asset_name,
@@ -154,65 +155,285 @@ app.get("/api/student/asset", (req, res) => {
       a.image,
       r.request_id,
       r.borrower_id,
-      r.return_status
+      r.approval_status,
+      r.return_status,
+      r.borrow_date,
+      r.return_date
     FROM asset a
     LEFT JOIN request_log r
       ON a.asset_id = r.asset_id
       AND r.borrower_id = ?
-      AND r.approval_status = 'Approved'
+      AND r.approval_status IN ('Pending','Approved')
   `;
-    con.query(sql, [borrowerId], (err, results) => {
-        if (err) return res.status(500).json({ success: false, message: "Database error" });
-        const assets = results.map((row) => ({
-            asset_id: row.asset_id,
-            asset_name: row.asset_name,
-            asset_status: row.asset_status || 'Available',
-            image: row.image || 'uploads/default.jpg',
-            request_id: row.request_id || null,
-            borrower_id: row.borrower_id || null,
-            return_status: row.return_status || 'Not Returned',
-        }));
-        res.json({ success: true, assets });
-    });
+
+  con.query(query, [borrowerId], (err, results) => {
+    if (err) {
+      console.error(err);
+      return res.status(500).json({ success: false, message: 'Database error' });
+    }
+
+    const assets = results.map(row => ({
+      asset_id: row.asset_id,
+      asset_name: row.asset_name,
+      asset_status: row.asset_status || 'Available',
+      image: row.image || '/public/image/default.jpg',
+      request_id: row.request_id || null,
+      borrower_id: row.borrower_id || null,
+      approval_status: row.approval_status || null,
+      return_status: row.return_status || 'Not Returned',
+      borrow_date: row.borrow_date || null,
+      return_date: row.return_date || null
+    }));
+
+    res.json({ success: true, assets });
+  });
 });
 
-////////////////////////////////////////////////////////////
-// 🟢 BORROW REQUEST
-////////////////////////////////////////////////////////////
-app.post("/api/student/borrow", (req, res) => {
-    const { borrower_id, asset_id, borrow_date, return_date } = req.body;
-    if (!borrower_id || !asset_id || !borrow_date || !return_date)
-        return res.status(400).json({ success: false, message: "Missing required fields" });
+// ====================== Borrower ===============================================
+app.get("/borrower/status/:id", (req, res) => {
+  const borrowerId = req.params.id;
 
-    con.beginTransaction((err) => {
-        if (err) return res.status(500).json({ success: false, message: "Transaction error" });
+  const sql = `
+    SELECT 
+      r.request_id,
+      a.asset_name,
+      a.image,
+      r.borrow_date,
+      r.return_date,
+      r.approval_status,
+      r.return_status,
+      a.asset_status
+    FROM request_log r
+    JOIN asset a ON r.asset_id = a.asset_id
+    WHERE r.borrower_id = ?
+    ORDER BY r.request_id DESC
+  `;
 
-        const checkSql = "SELECT asset_status FROM asset WHERE asset_id = ?";
-        con.query(checkSql, [asset_id], (err, result) => {
-            if (err) return con.rollback(() => res.status(500).json({ message: "Database error" }));
-            if (result.length === 0)
-                return con.rollback(() => res.status(404).json({ message: "Asset not found" }));
-            if (result[0].asset_status !== "Available")
-                return con.rollback(() => res.status(409).json({ message: "Asset unavailable" }));
+  con.query(sql, [borrowerId], (err, result) => {
+    if (err) {
+      console.error("❌ Fetch status error:", err);
+      return res.status(500).json({ success: false, message: "Database error" });
+    }
 
-            const insertSql = `
-        INSERT INTO request_log (borrower_id, asset_id, borrow_date, return_date, approval_status, return_status)
-        VALUES (?, ?, ?, ?, 'Pending', 'Not Returned')
-      `;
-            con.query(insertSql, [borrower_id, asset_id, borrow_date, return_date], (err) => {
-                if (err) return con.rollback(() => res.status(500).json({ message: "Insert error" }));
+    res.json({ success: true, requests: result });
+  });
+});
 
-                const updateSql = "UPDATE asset SET asset_status = 'Pending' WHERE asset_id = ?";
-                con.query(updateSql, [asset_id], (err) => {
-                    if (err) return con.rollback(() => res.status(500).json({ message: "Update error" }));
-                    con.commit((err) => {
-                        if (err) return con.rollback(() => res.status(500).json({ message: "Commit error" }));
-                        res.status(200).json({ success: true, message: "Borrow request submitted successfully" });
-                    });
-                });
-            });
+
+app.get("/borrower/history/:id", (req, res) => {
+  const borrowerId = req.params.id;
+
+  const sql = `
+    SELECT 
+      r.request_id,
+      a.asset_name,
+      a.image,
+      r.borrow_date,
+      r.return_date,
+      r.approval_status,
+      lender.username AS lender_name,
+      staff.username AS staff_name
+    FROM request_log r
+    JOIN asset a ON r.asset_id = a.asset_id
+    LEFT JOIN user lender ON r.lender_id = lender.user_id
+    LEFT JOIN user staff ON r.staff_id = staff.user_id
+    WHERE r.borrower_id = ?
+    ORDER BY r.borrow_date DESC
+  `;
+
+  con.query(sql, [borrowerId], (err, result) => {
+    if (err) {
+      console.error("❌ History fetch error:", err);
+      return res.status(500).json({ success: false, message: "Database error" });
+    }
+
+    res.json({ success: true, history: result });
+  });
+});
+
+
+// ----------------- Borrower: borrow item -----------------
+app.post("/borrower/borrow", (req, res) => {
+  const { borrower_id, asset_id } = req.body;
+
+  if (!borrower_id || !asset_id) {
+    return res.status(400).json({ success: false, message: "Missing fields" });
+  }
+
+  // ตรวจสอบว่ายืมสินค้าชิ้นนี้หรือมีการยืมในวันเดียวกันไปแล้ว
+  const sqlCheck = `
+    SELECT * FROM request_log
+    WHERE borrower_id = ?
+      AND (borrow_date = CURDATE() OR (
+        asset_id = ? AND approval_status IN ('Pending','Approved')
+        AND return_status IN ('Not Returned','Requested Return')
+      ))
+  `;
+
+  con.query(sqlCheck, [borrower_id, asset_id], (err, result) => {
+    if (err) {
+      console.error("❌ Database error:", err);
+      return res.status(500).json({ success: false, message: "Database error" });
+    }
+
+    if (result.length > 0) {
+      return res.status(400).json({
+        success: false,
+        message: "You already borrowed an item today or this item."
+      });
+    }
+
+    // ✅ borrow_date = วันนี้, return_date = พรุ่งนี้
+    const sqlInsert = `
+      INSERT INTO request_log (
+        borrower_id, asset_id, borrow_date, return_date,
+        approval_status, return_status
+      )
+      VALUES (?, ?, CURDATE(), DATE_ADD(CURDATE(), INTERVAL 1 DAY), 'Pending', 'Not Returned')
+    `;
+
+    const sqlUpdate = `UPDATE asset SET asset_status = 'Pending' WHERE asset_id = ?`;
+
+    con.beginTransaction(err => {
+      if (err)
+        return res.status(500).json({ success: false, message: "Transaction error" });
+
+      con.query(sqlInsert, [borrower_id, asset_id], (err) => {
+        if (err) {
+          console.error("❌ Insert failed:", err.sqlMessage || err);
+          return con.rollback(() =>
+            res.status(500).json({ success: false, message: "Insert failed" })
+          );
+        }
+
+        con.query(sqlUpdate, [asset_id], (err2) => {
+          if (err2) {
+            console.error("❌ Asset update failed:", err2.sqlMessage || err2);
+            return con.rollback(() =>
+              res.status(500).json({ success: false, message: "Asset update failed" })
+            );
+          }
+
+          con.commit(err3 => {
+            if (err3) {
+              console.error("❌ Commit failed:", err3.sqlMessage || err3);
+              return con.rollback(() =>
+                res.status(500).json({ success: false, message: "Commit failed" })
+              );
+            }
+
+            console.log("✅ Borrow request submitted successfully");
+            res.json({ success: true, message: "Borrow request submitted successfully" });
+          });
         });
+      });
     });
+  });
+});
+
+// ----------------- Borrower: return item -----------------
+app.delete("/borrower/return/:request_id", (req, res) => {
+  const requestId = req.params.request_id;
+
+  // ดึง asset_id ก่อน
+  const sqlFind = "SELECT asset_id FROM request_log WHERE request_id = ?";
+  con.query(sqlFind, [requestId], (err, result) => {
+    if (err) return res.status(500).json({ success: false, message: "Database error" });
+    if (result.length === 0)
+      return res.status(404).json({ success: false, message: "Request not found" });
+
+    const assetId = result[0].asset_id;
+
+    // เริ่ม transaction
+    con.beginTransaction(err => {
+      if (err) return res.status(500).json({ success: false, message: "Transaction error" });
+
+      // อัปเดต asset_status = Available
+      const sqlUpdateAsset = "UPDATE asset SET asset_status = 'Available' WHERE asset_id = ?";
+      con.query(sqlUpdateAsset, [assetId], (err2) => {
+        if (err2) {
+          return con.rollback(() =>
+            res.status(500).json({ success: false, message: "Asset update failed" })
+          );
+        }
+
+        // ลบ record ใน request_log
+        const sqlDeleteLog = "DELETE FROM request_log WHERE request_id = ?";
+        con.query(sqlDeleteLog, [requestId], (err3) => {
+          if (err3) {
+            return con.rollback(() =>
+              res.status(500).json({ success: false, message: "Delete failed" })
+            );
+          }
+
+          con.commit(err4 => {
+            if (err4) {
+              return con.rollback(() =>
+                res.status(500).json({ success: false, message: "Commit failed" })
+              );
+            }
+            res.json({ success: true, message: "Item returned successfully" });
+          });
+        });
+      });
+    });
+  });
+});
+
+// ----------------- Borrower: status return item -----------------
+app.get("/borrower/status/:borrower_id", (req, res) => {
+  const borrowerId = req.params.borrower_id;
+  const sql = `
+    SELECT
+      r.request_id,
+      a.asset_name,
+      a.image,
+      r.borrow_date,
+      r.return_date,
+      a.asset_status,
+      r.approval_status,
+      r.return_status
+    FROM request_log r
+    JOIN asset a ON r.asset_id = a.asset_id
+    WHERE r.borrower_id = ?
+    ORDER BY r.borrow_date DESC
+  `;
+  con.query(sql, [borrowerId], (err, results) => {
+    if (err) {
+      console.error(err);
+      return res.status(500).json({ success: false, message: "Database error" });
+    }
+    res.json({ success: true, requests: results });
+  });
+});
+
+
+// ----------------- Borrower: history endpoint -----------------
+app.get("/borrower/history/:borrower_id", (req, res) => {
+  const borrowerId = req.params.borrower_id;
+
+  const sql = `
+    SELECT 
+      r.request_id,
+      a.asset_name,
+      a.image,
+      r.borrow_date,
+      r.return_date,
+      r.approval_status,
+      r.return_status
+    FROM request_log r
+    JOIN asset a ON r.asset_id = a.asset_id
+    WHERE r.borrower_id = ?
+    ORDER BY r.borrow_date DESC
+  `;
+
+  con.query(sql, [borrowerId], (err, results) => {
+    if (err) {
+      console.error(err);
+      return res.status(500).json({ success: false, message: "Database error" });
+    }
+    res.json({ success: true, history: results });
+  });
 });
 
 ////////////////////////////////////////////////////////////
