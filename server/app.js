@@ -192,7 +192,8 @@ app.get("/api/student/asset", (req, res) => {
       a.image,
       r.request_id,
       r.borrower_id,
-      r.return_status
+      r.return_status,
+      r.approval_status
     FROM asset a
     LEFT JOIN request_log r
       ON a.asset_id = r.asset_id
@@ -200,22 +201,31 @@ app.get("/api/student/asset", (req, res) => {
       AND r.approval_status = 'Approved'
   `;
 
-  con.query(sql, [borrowerId], (err, results) => {
-    if (err)
-      return res.status(500).json({ success: false, message: "Database error" });
+    con.query(sql, [borrowerId], (err, results) => {
+        if (err) return res.status(500).json({ success: false, message: "Database error" });
 
-    const assets = results.map((row) => ({
-      asset_id: row.asset_id,
-      asset_name: row.asset_name,
-      asset_status: row.asset_status || 'Available',
-      image: row.image || 'uploads/default.jpg',
-      request_id: row.request_id || null,
-      borrower_id: row.borrower_id || null,
-      return_status: row.return_status || 'Not Returned',
-    }));
+        const assets = results.map((row) => {
+            let status = row.asset_status;
 
-    res.json({ success: true, assets });
-  });
+            if (row.return_status === "Requested Return") {
+                status = "Pending Return";
+            } else if (row.approval_status === "Approved") {
+                status = "Borrowed";
+            }
+
+            return {
+                asset_id: row.asset_id,
+                asset_name: row.asset_name,
+                asset_status: status || "Available",
+                image: row.image ? `/public/image/${row.image}` : `/public/image/default.jpg`,
+                request_id: row.request_id || null,
+                borrower_id: row.borrower_id || null,
+                return_status: row.return_status || "Not Returned",
+            };
+        });
+
+        res.json({ success: true, assets });
+    });
 });
 
 
@@ -293,8 +303,8 @@ app.put("/api/student/returnAsset/:request_id", (req, res) => {
 // 🟢 STATUS PAGE
 ////////////////////////////////////////////////////////////
 app.get("/api/student/status/:userId", (req, res) => {
-  const userId = req.params.userId;
-  const sql = `
+    const userId = req.params.userId;
+    const sql = `
     SELECT 
       rl.request_id,
       rl.borrow_date AS request_date,
@@ -315,10 +325,10 @@ app.get("/api/student/status/:userId", (req, res) => {
     ORDER BY rl.borrow_date DESC
     LIMIT 1;
   `;
-  con.query(sql, [userId], (err, results) => {
-    if (err) return res.status(500).json({ error: "Database error" });
-    res.json(results.length > 0 ? results[0] : null);
-  });
+    con.query(sql, [userId], (err, results) => {
+        if (err) return res.status(500).json({ error: "Database error" });
+        res.json(results.length > 0 ? results[0] : null);
+    });
 });
 
 
@@ -326,8 +336,8 @@ app.get("/api/student/status/:userId", (req, res) => {
 // 🟢 HISTORY PAGE
 ////////////////////////////////////////////////////////////
 app.get("/api/student/history/:userId", (req, res) => {
-  const userId = req.params.userId;
-  const sql = `
+    const userId = req.params.userId;
+    const sql = `
     SELECT 
       r.request_id,
       a.asset_name,
