@@ -6,13 +6,50 @@ const multer = require("multer");
 const con = require("./config/db");
 const cors = require("cors");
 const app = express();
-
+const jwt = require('jsonwebtoken');
+const JWT_KEY = 'm0bile2Simple';
 
 // Middleware
 app.use(cors());
 app.use(express.json());
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 app.use("/public/image", express.static(path.join(__dirname, "public/image")));
+
+// =======================================================
+//  🔐 JWT Verification Middleware
+// =======================================================
+function verifyUser(req, res, next) {
+   let token = req.headers['authorization'] || req.headers['x-access-token'];
+   if (token == undefined || token == null) {
+       // no token
+       return res.status(400).send('No token');
+   }
+
+
+   // token found
+   if (req.headers.authorization) {
+       const tokenString = token.split(' ');
+       if (tokenString[0] == 'Bearer') {
+           token = tokenString[1];
+       }
+   }
+   jwt.verify(token, JWT_KEY, (err, decoded) => {
+       if (err) {
+           res.status(401).send('Incorrect token');
+       }
+       else if(decoded.role != 'user') {
+           res.status(403).send('Forbidden to access the data');
+       }
+       else {
+           // remember the decoded token
+           req.decoded = decoded;
+           // go further to the route
+           next();
+       }
+   });
+}
+
+
 
 // =======================================================
 //  🧩 File Upload Config
@@ -81,7 +118,7 @@ app.post('/register', function (req, res) {
 });
 
 // =======================================================
-//  🔑 Login
+//  🔑 Login -------------------------- JWT encode / creation --------------
 // =======================================================
 app.post('/login', function (req, res) {
     const { username, password: raw } = req.body;
@@ -109,15 +146,12 @@ app.post('/login', function (req, res) {
             const role = result[0].role;
             const eachRoles = { 1: 'student', 2: 'staff', 3: 'lender' };
             const eachRole = eachRoles[role];
-
+            // JWT Payload
+            const payload = { user_id: result[0].user_id, role: eachRole, username: result[0].username ,email: result[0].email, message: "User login successfully"};
             if (eachRole) {
-                res.status(200).json({
-                    message: "User login successfully",
-                    role: eachRole,
-                    username: result[0].username,
-                    email: result[0].email,
-                    user_id: result[0].user_id
-                });
+                // Create JWT Token
+                const token = jwt.sign(payload, JWT_KEY, { expiresIn: '1h' });
+                return res.status(200).send(token);
             } else {
                 return res.status(401).send('Wrong username or password');
             }
@@ -145,9 +179,12 @@ app.get("/api/user/:userId", (req, res) => {
 // 🟢 ASSET (Student Home)
 ////////////////////////////////////////////////////////////
 app.get("/api/student/asset", (req, res) => {
-    const borrowerId = 1; // TODO: replace with actual session borrowerId
+  const borrowerId = req.query.borrower_id; 
+  if (!borrowerId) {
+    return res.status(400).json({ success: false, message: "Missing borrower_id" });
+  }
 
-    const sql = `
+  const sql = `
     SELECT 
       a.asset_id,
       a.asset_name,
@@ -190,6 +227,7 @@ app.get("/api/student/asset", (req, res) => {
         res.json({ success: true, assets });
     });
 });
+
 
 ////////////////////////////////////////////////////////////
 // 🟢 BORROW REQUEST
@@ -285,13 +323,14 @@ app.get("/api/student/status/:userId", (req, res) => {
         OR (rl.approval_status = 'Approved' AND rl.return_status IN ('Not Returned', 'Requested Return'))
       )
     ORDER BY rl.borrow_date DESC
-    LIMIT 1
+    LIMIT 1;
   `;
     con.query(sql, [userId], (err, results) => {
         if (err) return res.status(500).json({ error: "Database error" });
         res.json(results.length > 0 ? results[0] : null);
     });
 });
+
 
 ////////////////////////////////////////////////////////////
 // 🟢 HISTORY PAGE
@@ -300,21 +339,29 @@ app.get("/api/student/history/:userId", (req, res) => {
     const userId = req.params.userId;
     const sql = `
     SELECT 
-      r.request_id AS id,
-      a.asset_name AS name,
-      a.image AS imagePath,
-      r.borrow_date AS borrowDate,
-      r.return_date AS returnDate,
-      r.return_status AS returnStatus
+      r.request_id,
+      a.asset_name,
+      r.borrow_date,
+      r.return_date,
+      r.approval_status AS request_status,
+      r.return_status,
+      lender.username AS lender_name,
+      staff.username AS staff_name
     FROM request_log r
     JOIN asset a ON r.asset_id = a.asset_id
-    WHERE r.staff_id = ?;
+    LEFT JOIN user lender ON r.lender_id = lender.user_id
+    LEFT JOIN user staff ON r.staff_id = staff.user_id
+    WHERE r.borrower_id = ?
+      AND (r.approval_status = 'Rejected' OR r.return_status = 'Returned')
+    ORDER BY r.borrow_date DESC;
   `;
-    con.query(sql, [userId], (err, results) => {
-        if (err) return res.status(500).json({ error: "Database error" });
-        res.json(results);
-    });
+
+  con.query(sql, [userId], (err, results) => {
+    if (err) return res.status(500).json({ error: "Database error" });
+    res.json(results);
+  });
 });
+
 
 
 // =======================================================
@@ -520,7 +567,7 @@ app.put("/staff/returnAsset/:request_id", (req, res) => {
         }
 
         // Step 1: Get asset_id from request_log
-        const getAssetQuery = "SELECT asset_id FROM request_log WHERE request_id = ? AND approval_status = 'Approved' AND return_status IS NULL";
+        const getAssetQuery = "SELECT asset_id FROM request_log WHERE request_id = ? AND approval_status = 'Approved' AND return_status = 'Requested Return'";
 
         con.query(getAssetQuery, [request_id], (err, result) => {
             if (err) {
@@ -542,7 +589,7 @@ app.put("/staff/returnAsset/:request_id", (req, res) => {
             const updateRequestQuery = `
                 UPDATE request_log 
                 SET return_status = 'Returned', staff_id = ?, actual_return_date = NOW()
-                WHERE request_id = ? AND return_status IS NULL
+                WHERE request_id = ? AND return_status = 'Requested Return'
             `;
 
             con.query(updateRequestQuery, [staff_id, request_id], (err, result) => {
@@ -560,31 +607,31 @@ app.put("/staff/returnAsset/:request_id", (req, res) => {
                 }
 
                 // Step 3: Update asset_status to "Available"
-                const updateAssetQuery = `
-                    UPDATE asset 
-                    SET asset_status = 'Available' 
-                    WHERE asset_id = ?
-                `;
+                // const updateAssetQuery = `
+                //     UPDATE asset 
+                //     SET asset_status = 'Available' 
+                //     WHERE asset_id = ?
+                // `;
 
-                con.query(updateAssetQuery, [asset_id], (err, result) => {
-                    if (err) {
-                        return con.rollback(() => {
-                            console.error("Error updating asset status:", err);
-                            res.status(500).send("Internal Server Error");
-                        });
-                    }
+                // con.query(updateAssetQuery, [asset_id], (err, result) => {
+                //     if (err) {
+                //         return con.rollback(() => {
+                //             console.error("Error updating asset status:", err);
+                //             res.status(500).send("Internal Server Error");
+                //         });
+                //     }
 
-                    con.commit((err) => {
-                        if (err) {
-                            return con.rollback(() => {
-                                console.error("Transaction commit error:", err);
-                                res.status(500).send("Internal Server Error");
-                            });
-                        }
+                //     con.commit((err) => {
+                //         if (err) {
+                //             return con.rollback(() => {
+                //                 console.error("Transaction commit error:", err);
+                //                 res.status(500).send("Internal Server Error");
+                //             });
+                //         }
 
-                        res.json({ message: "Asset returned successfully, marked as Available" });
-                    });
-                });
+                //         res.json({ message: "Asset returned successfully, marked as Available" });
+                //     });
+                // });
             });
         });
     });
