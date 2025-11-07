@@ -6,13 +6,50 @@ const multer = require("multer");
 const con = require("./config/db");
 const cors = require("cors");
 const app = express();
-
+const jwt = require('jsonwebtoken');
+const JWT_KEY = 'm0bile2Simple';
 
 // Middleware
 app.use(cors());
 app.use(express.json());
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 app.use("/public/image", express.static(path.join(__dirname, "public/image")));
+
+// =======================================================
+//  🔐 JWT Verification Middleware
+// =======================================================
+function verifyUser(req, res, next) {
+   let token = req.headers['authorization'] || req.headers['x-access-token'];
+   if (token == undefined || token == null) {
+       // no token
+       return res.status(400).send('No token');
+   }
+
+
+   // token found
+   if (req.headers.authorization) {
+       const tokenString = token.split(' ');
+       if (tokenString[0] == 'Bearer') {
+           token = tokenString[1];
+       }
+   }
+   jwt.verify(token, JWT_KEY, (err, decoded) => {
+       if (err) {
+           res.status(401).send('Incorrect token');
+       }
+       else if(decoded.role != 'user') {
+           res.status(403).send('Forbidden to access the data');
+       }
+       else {
+           // remember the decoded token
+           req.decoded = decoded;
+           // go further to the route
+           next();
+       }
+   });
+}
+
+
 
 // =======================================================
 //  🧩 File Upload Config
@@ -81,7 +118,7 @@ app.post('/register', function (req, res) {
 });
 
 // =======================================================
-//  🔑 Login
+//  🔑 Login -------------------------- JWT encode / creation --------------
 // =======================================================
 app.post('/login', function (req, res) {
     const { username, password: raw } = req.body;
@@ -109,15 +146,12 @@ app.post('/login', function (req, res) {
             const role = result[0].role;
             const eachRoles = { 1: 'student', 2: 'staff', 3: 'lender' };
             const eachRole = eachRoles[role];
-
+            // JWT Payload
+            const payload = { user_id: result[0].user_id, role: eachRole, username: result[0].username ,email: result[0].email, message: "User login successfully"};
             if (eachRole) {
-                res.status(200).json({
-                    message: "User login successfully",
-                    role: eachRole,
-                    username: result[0].username,
-                    email: result[0].email,
-                    user_id: result[0].user_id
-                });
+                // Create JWT Token
+                const token = jwt.sign(payload, JWT_KEY, { expiresIn: '1h' });
+                return res.status(200).send(token);
             } else {
                 return res.status(401).send('Wrong username or password');
             }
