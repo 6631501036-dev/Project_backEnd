@@ -1,4 +1,4 @@
-// server/app.js
+// // server/app.js
 const express = require("express");
 const path = require("path");
 const bcrypt = require("bcrypt");
@@ -26,7 +26,7 @@ const upload = multer({ storage: storage });
 
 
 
-// Hash Password
+// // Hash Password
 app.get("/password/:pass", function (req, res) {
     const password = req.params.pass;
     const saltRounds = 10;
@@ -39,7 +39,7 @@ app.get("/password/:pass", function (req, res) {
     });
 });
 
-// Register endpoint บอสแก้
+// // Register endpoint บอสแก้
 app.post('/register', function (req, res) {
     const { username, email, password: rawPassword, repassword } = req.body;
     const role = 1; // Default role: student
@@ -76,7 +76,7 @@ app.post('/register', function (req, res) {
     });
 });
 
-// Login endpoint
+// // Login endpoint
 app.post('/login', function (req, res) {
     const { username, password: raw } = req.body;
     const sql = "SELECT user_id, username, email, password, role FROM user WHERE username=?";
@@ -120,7 +120,7 @@ app.post('/login', function (req, res) {
 });
 
 
-// ----------------- Fix /asset to accept borrower_id -----------------
+// // ----------------- Fix /asset to accept borrower_id -----------------
 app.get("/asset", (req, res) => {
   // อ่าน borrower_id จาก query string (optional)
   const borrowerId = req.query.borrower_id ? Number(req.query.borrower_id) : null;
@@ -167,7 +167,7 @@ app.get("/asset", (req, res) => {
   });
 });
 
-// ====================== Borrower ===============================================
+// // ====================== Borrower ===============================================
 app.get("/borrower/status/:id", (req, res) => {
   const borrowerId = req.params.id;
 
@@ -230,7 +230,85 @@ app.get("/borrower/history/:id", (req, res) => {
 });
 
 
-// ----------------- Borrower: borrow item -----------------
+// // ----------------- Borrower: borrow item -----------------
+// app.post("/borrower/borrow", (req, res) => {
+//   const { borrower_id, asset_id } = req.body;
+
+//   if (!borrower_id || !asset_id) {
+//     return res.status(400).json({ success: false, message: "Missing fields" });
+//   }
+
+//   // ตรวจสอบว่ายืมสินค้าชิ้นนี้หรือมีการยืมในวันเดียวกันไปแล้ว
+//   const sqlCheck = `
+//     SELECT * FROM request_log
+//     WHERE borrower_id = ?
+//       AND (borrow_date = CURDATE() OR (
+//         asset_id = ? AND approval_status IN ('Pending','Approved')
+//         AND return_status IN ('Not Returned','Requested Return')
+//       ))
+//   `;
+//    con.query(sqlCheck, [borrower_id, asset_id], (err, result) => {
+//     if (err) {
+//       console.error("❌ Database error:", err);
+//       return res.status(500).json({ success: false, message: "Database error" });
+//     }
+
+//     if (result.length > 0) {
+//       return res.status(400).json({
+//         success: false,
+//         message: "You already borrowed an item today or this item."
+//       });
+//     }
+
+//     // ✅ borrow_date = วันนี้, return_date = พรุ่งนี้
+//     const sqlInsert = `
+//       INSERT INTO request_log (
+//         borrower_id, asset_id, borrow_date, return_date,
+//         approval_status, return_status
+//       )
+//       VALUES (?, ?, CURDATE(), DATE_ADD(CURDATE(), INTERVAL 1 DAY), 'Pending', 'Not Returned')
+//     `;
+
+//     const sqlUpdate = `UPDATE asset SET asset_status = 'Pending' WHERE asset_id = ?`;
+
+//     con.beginTransaction(err => {
+//       if (err)
+//         return res.status(500).json({ success: false, message: "Transaction error" });
+
+//       con.query(sqlInsert, [borrower_id, asset_id], (err) => {
+//         if (err) {
+//           console.error("❌ Insert failed:", err.sqlMessage || err);
+//           return con.rollback(() =>
+//             res.status(500).json({ success: false, message: "Insert failed" })
+//           );
+//         }
+
+//         con.query(sqlUpdate, [asset_id], (err2) => {
+//           if (err2) {
+//             console.error("❌ Asset update failed:", err2.sqlMessage || err2);
+//             return con.rollback(() =>
+//               res.status(500).json({ success: false, message: "Asset update failed" })
+//             );
+//           }
+
+//           con.commit(err3 => {
+//             if (err3) {
+//               console.error("❌ Commit failed:", err3.sqlMessage || err3);
+//               return con.rollback(() =>
+//                 res.status(500).json({ success: false, message: "Commit failed" })
+//               );
+//             }
+
+//             console.log("✅ Borrow request submitted successfully");
+//             res.json({ success: true, message: "Borrow request submitted successfully" });
+//           });
+//         });
+//       });
+//     });
+//   });
+// });
+
+// ----------------- Borrower: borrow item (แก้ไขแล้ว) -----------------
 app.post("/borrower/borrow", (req, res) => {
   const { borrower_id, asset_id } = req.body;
 
@@ -238,14 +316,25 @@ app.post("/borrower/borrow", (req, res) => {
     return res.status(400).json({ success: false, message: "Missing fields" });
   }
 
-  // ตรวจสอบว่ายืมสินค้าชิ้นนี้หรือมีการยืมในวันเดียวกันไปแล้ว
+  // 💡 SQL CHECK ที่แก้ไข:
+  // ตรวจสอบว่าผู้ใช้มีการยืมสินค้าที่ยัง Active (Pending/Approved) และยังไม่ถูกคืน (Not Returned/Requested Return)
+  // 1. ตรวจสอบว่ามีการยืม 'วันนี้' ที่ยังไม่คืน เพื่อจำกัดโควต้า 1 ครั้งต่อวัน
+  // 2. ตรวจสอบว่ามียืมสินค้าชิ้นเดียวกันที่ยัง Pending/Approved อยู่หรือไม่
   const sqlCheck = `
     SELECT * FROM request_log
     WHERE borrower_id = ?
-      AND (borrow_date = CURDATE() OR (
-        asset_id = ? AND approval_status IN ('Pending','Approved')
-        AND return_status IN ('Not Returned','Requested Return')
-      ))
+      AND (
+        (
+          borrow_date = CURDATE() 
+          AND approval_status IN ('Pending','Approved')
+          AND return_status IN ('Not Returned','Requested Return')
+        )
+        OR (
+          asset_id = ? 
+          AND approval_status IN ('Pending','Approved')
+          AND return_status IN ('Not Returned','Requested Return')
+        )
+      )
   `;
 
   con.query(sqlCheck, [borrower_id, asset_id], (err, result) => {
@@ -255,9 +344,19 @@ app.post("/borrower/borrow", (req, res) => {
     }
 
     if (result.length > 0) {
+      const activeBorrow = result.find(r => 
+        r.borrow_date.toISOString().split('T')[0] === new Date().toISOString().split('T')[0]
+      );
+      if (activeBorrow) {
+        return res.status(400).json({
+          success: false,
+          message: "You already have an active borrowing request today. Please return the current item first."
+        });
+      }
+      // กรณีนี้คือพยายามยืม item เดิมที่ยัง Pending/Approved อยู่
       return res.status(400).json({
         success: false,
-        message: "You already borrowed an item today or this item."
+        message: "You already have a pending/approved request for this item."
       });
     }
 
@@ -272,6 +371,7 @@ app.post("/borrower/borrow", (req, res) => {
 
     const sqlUpdate = `UPDATE asset SET asset_status = 'Pending' WHERE asset_id = ?`;
 
+    // เริ่ม Transaction
     con.beginTransaction(err => {
       if (err)
         return res.status(500).json({ success: false, message: "Transaction error" });
@@ -309,6 +409,8 @@ app.post("/borrower/borrow", (req, res) => {
   });
 });
 
+
+
 // ----------------- Borrower: return item -----------------
 app.delete("/borrower/return/:request_id", (req, res) => {
   const requestId = req.params.request_id;
@@ -341,6 +443,53 @@ app.delete("/borrower/return/:request_id", (req, res) => {
           if (err3) {
             return con.rollback(() =>
               res.status(500).json({ success: false, message: "Delete failed" })
+            );
+          }
+
+          con.commit(err4 => {
+            if (err4) {
+              return con.rollback(() =>
+                res.status(500).json({ success: false, message: "Commit failed" })
+              );
+            }
+            res.json({ success: true, message: "Item returned successfully" });
+          });
+        });
+      });
+    });
+  });
+});
+
+// ----------------- Borrower: return item (update version) -----------------
+app.put("/borrower/return/:request_id", (req, res) => {
+  const requestId = req.params.request_id;
+
+  const sqlFind = "SELECT asset_id FROM request_log WHERE request_id = ?";
+  con.query(sqlFind, [requestId], (err, result) => {
+    if (err) return res.status(500).json({ success: false, message: "Database error" });
+    if (result.length === 0)
+      return res.status(404).json({ success: false, message: "Request not found" });
+
+    const assetId = result[0].asset_id;
+
+    con.beginTransaction(err => {
+      if (err) return res.status(500).json({ success: false, message: "Transaction error" });
+
+      // อัปเดต asset_status = Available
+      const sqlUpdateAsset = "UPDATE asset SET asset_status = 'Available' WHERE asset_id = ?";
+      con.query(sqlUpdateAsset, [assetId], (err2) => {
+        if (err2) {
+          return con.rollback(() =>
+            res.status(500).json({ success: false, message: "Asset update failed" })
+          );
+        }
+
+        // อัปเดต return_status ใน request_log เป็น 'Returned'
+        const sqlUpdateLog = "UPDATE request_log SET return_status = 'Returned', actual_return_date = NOW() WHERE request_id = ?";
+        con.query(sqlUpdateLog, [requestId], (err3) => {
+          if (err3) {
+            return con.rollback(() =>
+              res.status(500).json({ success: false, message: "Update request log failed" })
             );
           }
 
@@ -758,3 +907,4 @@ const PORT = 3000;
 app.listen(PORT, () => {
     console.log(`Server is running on port ${PORT}`);
 });
+
