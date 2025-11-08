@@ -3,7 +3,7 @@
 -- https://www.phpmyadmin.net/
 --
 -- Host: 127.0.0.1
--- Generation Time: Nov 02, 2025 at 08:28 AM
+-- Generation Time: Nov 07, 2025 at 05:09 AM
 -- Server version: 10.4.32-MariaDB
 -- PHP Version: 8.2.12
 
@@ -18,7 +18,7 @@ SET time_zone = "+00:00";
 /*!40101 SET NAMES utf8mb4 */;
 
 --
--- Database: `moblie`
+-- Database: `mobile`
 --
 
 -- --------------------------------------------------------
@@ -30,10 +30,17 @@ SET time_zone = "+00:00";
 CREATE TABLE `asset` (
   `asset_id` smallint(6) UNSIGNED NOT NULL,
   `asset_name` varchar(20) NOT NULL,
-  `asset_status` enum('Available','Pending','Borrowed','Disabled') NOT NULL,
+  `asset_status` enum('Available','Pending','Borrowed','Disabled') NOT NULL DEFAULT 'Available',
   `description` varchar(255) DEFAULT NULL,
   `image` varchar(50) NOT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+--
+-- Dumping data for table `asset`
+--
+
+INSERT INTO `asset` (`asset_id`, `asset_name`, `asset_status`, `description`, `image`) VALUES
+(46, 'Badminton', 'Available', NULL, 'asset/image/batminton.png');
 
 -- --------------------------------------------------------
 
@@ -56,11 +63,18 @@ CREATE TABLE `request_log` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 --
+-- Dumping data for table `request_log`
+--
+
+INSERT INTO `request_log` (`request_id`, `borrower_id`, `asset_id`, `borrow_date`, `return_date`, `approval_status`, `lender_id`, `approval_date`, `staff_id`, `return_status`, `actual_return_date`) VALUES
+(60, 16, 46, '2025-11-07', '2025-11-14', 'Approved', NULL, NULL, NULL, 'Returned', NULL);
+
+--
 -- Triggers `request_log`
 --
 DELIMITER $$
 CREATE TRIGGER `after_asset_return` AFTER UPDATE ON `request_log` FOR EACH ROW BEGIN
-    IF NEW.return_status = 'Returned' THEN
+    IF OLD.return_status <> 'Returned' AND NEW.return_status = 'Returned' THEN
         UPDATE asset
         SET asset_status = 'Available'
         WHERE asset_id = NEW.asset_id;
@@ -70,15 +84,13 @@ $$
 DELIMITER ;
 DELIMITER $$
 CREATE TRIGGER `after_request_approval` AFTER UPDATE ON `request_log` FOR EACH ROW BEGIN
-    -- Check if the approval_status is 'Approved'
-    IF NEW.approval_status = 'Approved' THEN
-        -- Update the asset status to 'Borrowed'
+    -- ทำงานเฉพาะตอน approval_status เปลี่ยนจริง
+    IF OLD.approval_status <> 'Approved' AND NEW.approval_status = 'Approved' THEN
         UPDATE asset
         SET asset_status = 'Borrowed'
         WHERE asset_id = NEW.asset_id;
-        
-        
     END IF;
+
 END
 $$
 DELIMITER ;
@@ -96,6 +108,13 @@ CREATE TABLE `user` (
   `password` varchar(60) NOT NULL,
   `role` tinyint(3) UNSIGNED NOT NULL COMMENT '1=student 2=staff 3=lender'
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+--
+-- Dumping data for table `user`
+--
+
+INSERT INTO `user` (`user_id`, `email`, `username`, `password`, `role`) VALUES
+(16, 'test@gamil.com', 'Toon', '$2b$10$i81X/3Xy.j9AQ9INrUmhXucmxhSRD853yda/3mSDbt08TagjfcX2K', 1);
 
 --
 -- Indexes for dumped tables
@@ -132,19 +151,19 @@ ALTER TABLE `user`
 -- AUTO_INCREMENT for table `asset`
 --
 ALTER TABLE `asset`
-  MODIFY `asset_id` smallint(6) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=45;
+  MODIFY `asset_id` smallint(6) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=47;
 
 --
 -- AUTO_INCREMENT for table `request_log`
 --
 ALTER TABLE `request_log`
-  MODIFY `request_id` smallint(6) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=59;
+  MODIFY `request_id` smallint(6) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=61;
 
 --
 -- AUTO_INCREMENT for table `user`
 --
 ALTER TABLE `user`
-  MODIFY `user_id` smallint(6) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=16;
+  MODIFY `user_id` smallint(6) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=17;
 
 --
 -- Constraints for dumped tables
