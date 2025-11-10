@@ -37,8 +37,8 @@ function verifyUser(req, res, next) {
        if (err) {
            res.status(401).send('Incorrect token');
        }
-       else if(decoded.role != 'user'&'staff'&'lender') {
-           res.status(403).send('Forbidden to access the data');//ทำให้ token หา role เจอ
+       else if(decoded.role != 'student'|| decoded.role != 'staff' || decoded.role != 'lender') {
+           res.status(403).send('Forbidden to access the data');
        }
        else {
            // remember the decoded token
