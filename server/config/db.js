@@ -5,7 +5,7 @@ const con = mysql.createConnection({
     user: 'root',
     password: '',
     database: 'mobile',
-    timeZone: '+07:00'
+    timezone: '+07:00'
 });
 
 con.connect(function(err) {
