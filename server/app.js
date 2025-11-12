@@ -7,6 +7,7 @@ const con = require("./config/db");
 const cors = require("cors");
 const app = express();
 const jwt = require('jsonwebtoken');
+// const { fail } = require("assert");
 const JWT_KEY = 'm0bile2Simple';
 
 // Middleware
@@ -177,61 +178,65 @@ app.get("/api/user/:userId", (req, res) => {
 ////////////////////////////////////////////////////////////
 // 🟢 ASSET (Student Home)
 ////////////////////////////////////////////////////////////
-app.get("/api/student/asset",(req, res) => {
+app.get("/api/student/asset", (req, res) => {
   const borrowerId = req.query.borrower_id; 
   if (!borrowerId) {
     return res.status(400).json({ success: false, message: "Missing borrower_id" });
   }
 
   const sql = `
-   SELECT 
-    a.asset_id,
-    a.asset_name,
-    a.asset_status,
-    a.image,
-    r.request_id,
-    r.borrower_id,
-    r.return_status,
-    r.approval_status,
-    r.can_borrow_today
+SELECT a.asset_id, a.asset_name, a.asset_status, a.image,
+       r.request_id, r.borrower_id, r.return_status, r.approval_status
 FROM asset a
-LEFT JOIN request_log r
-    ON a.asset_id = r.asset_id
-    AND r.borrower_id = ?
-    AND r.return_status != 'Returned'
+LEFT JOIN (
+    SELECT r1.*
+    FROM request_log r1
+    INNER JOIN (
+        SELECT asset_id, MAX(request_id) AS max_request_id
+        FROM request_log
+        WHERE borrower_id = ?
+        GROUP BY asset_id
+    ) r2
+    ON r1.asset_id = r2.asset_id AND r1.request_id = r2.max_request_id
+) r
+ON a.asset_id = r.asset_id
+WHERE a.asset_status != 'Deleted'
 
-  `;
-
-    con.query(sql, [borrowerId], (err, results) => {
-        if (err) return res.status(500).json({ success: false, message: "Database error" });
-
-        const assets = results.map((row) => {
-            let status = row.asset_status;
-
-if (row.return_status === 'Requested Return') {
-    status = "Pending Return";
-} else if (row.return_status === 'Returned') {
-    status = "Available"; // <--- แก้ตรงนี้สำคัญ
-} else if (row.approval_status === "Approved") {
-    status = "Borrowed";
-} else if (row.approval_status === "Pending") {
-    status = "Pending";
-}
+`;
 
 
-            return {
-                asset_id: row.asset_id,
-                asset_name: row.asset_name,
-                asset_status: status || "Available",
-                image: row.image ? row.image : 'default.jpg',//แก้ให้ไม่ต้องใส่ public/image/ซ้ำซ้อน
-                request_id: row.request_id || null,
-                borrower_id: row.borrower_id || null,
-                return_status: row.return_status || "Not Returned",
-            };
-        });
+  con.query(sql, [borrowerId, borrowerId], (err, results) => {
+    if (err) return res.status(500).json({ success: false, message: "Database error" });
 
-        res.json({ success: true, assets });
+    const assets = results.map((row) => {
+      let status = row.asset_status;
+
+      if (row.asset_status === 'Disabled') {
+        status = 'Disabled';
+      } else if (row.return_status === 'Requested Return') {
+        status = "Pending Return";
+      } else if (row.return_status === 'Returned') {
+        status = "Available";
+      } else if (row.approval_status === "Approved") {
+        status = "Borrowed";
+      } else if (row.approval_status === "Rejected") {
+        status = "Available";
+      } else if (row.approval_status === "Pending") {
+        status = "Pending";
+      }
+      return {
+        asset_id: row.asset_id,
+        asset_name: row.asset_name,
+        asset_status: status || "Available",
+        image: row.image || 'default.jpg',
+        request_id: row.request_id || null,
+        borrower_id: row.borrower_id || null,
+        return_status: row.return_status || "Not Returned",
+      };
     });
+
+    res.json({ success: true, assets });
+  });
 });
 
 ////////////////////////////////////////////////////////////
@@ -311,7 +316,6 @@ AND can_borrow_today = 0
     });
 });
 
-
 ////////////////////////////////////////////////////////////
 // 🟢 RETURN REQUEST (Student)
 ////////////////////////////////////////////////////////////
@@ -369,22 +373,22 @@ app.get("/api/student/status/:userId", (req, res) => {
   rl.can_borrow_today
 FROM request_log rl
 JOIN asset a ON rl.asset_id = a.asset_id
-WHERE rl.borrower_id = ?
-ORDER BY rl.borrow_date DESC
-LIMIT 1;
+ WHERE rl.request_id = (
+      SELECT MAX(request_id)
+      FROM request_log
+      WHERE borrower_id = ?
+    );
+
+;
 `;
   con.query(sql, [userId], (err, results) => {
     if (err) return res.status(500).json({ error: "Database error" });
     res.json(results.length > 0 ? results[0] : null);
   });
 });
-
-
-
 ////////////////////////////////////////////////////////////
 // 🟢 HISTORY PAGE
 ////////////////////////////////////////////////////////////
-
 app.get("/api/student/history/:userId", (req, res) => {
   const userId = req.params.userId;
   const sql = `
@@ -402,7 +406,7 @@ app.get("/api/student/history/:userId", (req, res) => {
     LEFT JOIN user lender ON r.lender_id = lender.user_id
     LEFT JOIN user staff ON r.staff_id = staff.user_id
     WHERE r.borrower_id = ?
-    ORDER BY r.borrow_date DESC;
+    ORDER BY r.request_id ASC;
   `;
 
   con.query(sql, [userId], (err, results) => {
@@ -482,39 +486,57 @@ app.put("/staff/editAsset/:id", upload.single("image"), (req, res) => {
 
 // Disable Asset
 app.put("/staff/editAsset/:asset_id/disable", (req, res) => {
-    const assetId = req.params.asset_id;
-    const getAssetNameSql = "SELECT asset_name FROM asset WHERE asset_id = ?";
-    const updateStatusSql = "UPDATE asset SET asset_status = 'Disabled' WHERE asset_id = ?";
+  const assetId = req.params.asset_id;
+  const getAssetSql = "SELECT asset_name, asset_status FROM asset WHERE asset_id = ?";
+  const updateStatusSql = "UPDATE asset SET asset_status = 'Disabled' WHERE asset_id = ?";
 
-    con.query(getAssetNameSql, [assetId], (err, result) => {
-        if (err) {
-            console.error("Database error:", err);
-            return res.status(500).json({ success: false, message: 'Database error' });
-        }
-        if (result.length === 0) {
-            return res.status(404).json({ success: false, message: 'Asset not found' });
-        }
+  con.query(getAssetSql, [assetId], (err, assetResult) => {
+    if (err) return res.status(500).json({ success: false, message: "Database error" });
+    if (assetResult.length === 0) return res.status(404).json({ success: false, message: "Asset not found" });
 
-        const assetName = result[0].asset_name;
+    const assetName = assetResult[0].asset_name;
+    const currentStatus = assetResult[0].asset_status;
 
-        con.query(updateStatusSql, [assetId], (err, updateResult) => {
-            if (err) {
-                console.error("Database error:", err);
-                return res.status(500).json({ success: false, message: 'Update failed' });
-            }
+    // ถ้า Borrowed → ห้าม disable
+    if (currentStatus === "Borrowed") {
+      return res.status(400).json({
+        success: false,
+        message: `${assetName} is currently Borrowed and cannot be disabled.`,
+      });
+    }
 
-            if (updateResult.affectedRows === 0) {
-                return res.status(404).json({ success: false, message: 'Asset not found' });
-            }
+    // เริ่ม transaction
+    con.beginTransaction((err) => {
+      if (err) return res.status(500).json({ success: false, message: "Transaction error" });
+
+      // อัพเดต asset เป็น Disabled
+      con.query(updateStatusSql, [assetId], (err, updateResult) => {
+        if (err) return con.rollback(() => res.status(500).json({ success: false, message: "Update failed" }));
+
+        // ถ้ามี request_log ที่ Pending ให้เปลี่ยนเป็น Rejected และ set can_borrow_today = 1
+        const rejectPendingSql = `
+          UPDATE request_log
+          SET approval_status = 'Rejected',
+              can_borrow_today = 1
+          WHERE asset_id = ? AND approval_status = 'Pending'
+        `;
+        con.query(rejectPendingSql, [assetId], (err, rejectResult) => {
+          if (err) return con.rollback(() => res.status(500).json({ success: false, message: "Failed to update requests" }));
+
+          con.commit((err) => {
+            if (err) return con.rollback(() => res.status(500).json({ success: false, message: "Commit failed" }));
 
             res.json({
-                success: true,
-                message: `${assetName} is now Disabled`,
-                asset_id: assetId,
-                status: "Disabled"
+              success: true,
+              message: `${assetName} disabled successfully. Pending requests rejected.`,
+              asset_id: assetId,
+              status: "Disabled",
             });
+          });
         });
+      });
     });
+  });
 });
 
 // Enable Asset
@@ -571,22 +593,13 @@ app.delete("/staff/deleteAsset/:id", (req, res) => {
     });
 });
 
-
-//get all assets in staff
-app.get("/assets", verifyUser, (req, res) => {
-  if (req.decoded.role !== 'staff') {
-    return res.status(403).json({ success: false, message: "Access denied: not a staff" });
-  }
-
+//get assets
+app.get("/assets", (req, res) => {
+  // ไม่ต้อง verifyToken
   const sql = "SELECT * FROM asset";
   con.query(sql, (err, result) => {
-    if (err) return res.status(500).json({ success: false, message: "Database error" });
-
-    res.json({
-      success: true,
-      assets: result,
-      staff: { staffId: req.decoded.user_id, username: req.decoded.username },
-    });
+    if (err) throw err;
+    res.json({ assets: result });
   });
 });
 
@@ -595,7 +608,6 @@ app.get("/staff", verifyUser, (req, res) => {
   if (req.user.role !== 'staff') {
     return res.status(403).json({ success: false, message: "Access denied: not a staff" });
   }
-
   const staffId = req.user.user_id;
   const username = req.user.username;
 
@@ -908,6 +920,59 @@ app.put("/lender/borrowingRequest/:request_id/reject", (req, res) => {
     });
 });
 
+// =======================================================
+//  🟢 Dashborad API SECTION 
+// =======================================================
+
+// Staff Dashboard
+app.get("/staff/dashboard/:staff_id", (req, res) => {
+  const staffId = req.params.staff_id;
+
+  const sql = `
+    SELECT
+      (SELECT COUNT(*) FROM asset) AS total_assets,
+      (SELECT COUNT(*) FROM asset WHERE asset_status = 'Available') AS available_assets,
+      (SELECT COUNT(*) FROM asset WHERE asset_status = 'Borrowed') AS borrowed_assets,
+      (SELECT COUNT(*) FROM asset WHERE asset_status = 'Disabled') AS disabled_assets,
+      (SELECT COUNT(*) FROM request_log WHERE approval_status = 'Pending') AS pending_requests,
+      (SELECT COUNT(*) FROM request_log WHERE return_status = 'Requested Return') AS requested_returns
+  `;
+
+  con.query(sql, [staffId], (err, result) => {
+    if (err) {
+      console.error("Dashboard Query Error:", err);
+      return res.status(500).json({ success: false, message: "Database error" });
+    }
+
+    res.json({
+      success: true,
+      data: result[0],
+    });
+  });
+});
+
+// =======================================================
+//  🟢 Notification API 
+// =======================================================
+let returnNotifications = 0;
+// 📩 เพิ่มแจ้งเตือนเมื่อ student ขอคืนของ
+app.post("/api/notifyReturn", (req, res) => {
+  returnNotifications++;
+  console.log(`🔔 แจ้งเตือนใหม่! รวมทั้งหมด: ${returnNotifications}`);
+  res.json({ success: true, message: "แจ้งเตือนส่งไปยัง staff แล้ว" });
+});
+
+// 👀 ให้ staff ดูจำนวนแจ้งเตือน
+app.get("/api/returnCount", (req, res) => {
+  res.json({ count: returnNotifications });
+});
+
+// 🧹 ล้างแจ้งเตือนเมื่อ staff เปิดดูแล้ว
+app.delete("/api/clearReturnNotifications", (req, res) => {
+  returnNotifications = 0;
+  console.log("✅ ล้างแจ้งเตือนทั้งหมดแล้ว");
+  res.json({ success: true });
+});
 // =======================================================
 //  🚀 START SERVER
 // =======================================================
