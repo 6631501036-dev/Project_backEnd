@@ -441,6 +441,33 @@ app.get("/api/lender/history/:userId", (req, res) => {
   });
 });
 
+app.get("/api/staff/history", (req, res) => {
+  const userId = req.params.userId;
+  const sql = `
+    SELECT 
+      r.request_id,
+      a.asset_name,
+      r.borrow_date,
+      r.return_date,
+      r.approval_status AS request_status,
+      u.username AS borrower_name,
+      staff.username AS staff_name
+    FROM request_log r
+    JOIN asset a ON r.asset_id = a.asset_id
+    LEFT JOIN user u ON r.borrower_id = u.user_id
+    LEFT JOIN user staff ON r.staff_id = staff.user_id
+    ORDER BY r.borrow_date DESC;
+  `;
+
+  con.query(sql, [userId], (err, results) => {
+    if (err) {
+      console.error("DB Error /api/staff/history:", err);
+      return res.status(500).json({ error: "Database error" });
+    }
+    res.json(results);
+  });
+});
+
 // =======================================================
 //  🟢 STAFF API SECTION 
 // =======================================================
