@@ -3,7 +3,7 @@
 -- https://www.phpmyadmin.net/
 --
 -- Host: 127.0.0.1
--- Generation Time: Nov 10, 2025 at 06:59 PM
+-- Generation Time: Nov 13, 2025 at 10:22 AM
 -- Server version: 10.4.32-MariaDB
 -- PHP Version: 8.2.12
 
@@ -40,8 +40,10 @@ CREATE TABLE `asset` (
 --
 
 INSERT INTO `asset` (`asset_id`, `asset_name`, `asset_status`, `description`, `image`) VALUES
-(56, 'basketball', 'Available', 'Sport Equipment', '/public/image/1762795795360.png'),
-(57, 'badminton', 'Pending', 'Sport Equipment', '/public/image/1762797067947.png');
+(56, 'basketball', 'Borrowed', 'Sport Equipment', '/public/image/basketball.png'),
+(57, 'badminton', 'Available', 'Sport Equipment', '/public/image/badminton.png'),
+(58, 'volleyball', 'Available', 'Sport Equipment', '/public/image/volleyball.png'),
+(59, 'football', 'Available', 'Sport Equipment', '/public/image/football.png');
 
 -- --------------------------------------------------------
 
@@ -70,7 +72,9 @@ CREATE TABLE `request_log` (
 
 INSERT INTO `request_log` (`request_id`, `borrower_id`, `asset_id`, `borrow_date`, `return_date`, `approval_status`, `lender_id`, `approval_date`, `staff_id`, `return_status`, `actual_return_date`, `can_borrow_today`) VALUES
 (89, 23, 56, '2025-11-11', '2025-11-18', 'Approved', NULL, NULL, 18, 'Returned', '2025-11-11', 1),
-(90, 23, 57, '2025-11-11', '2025-11-18', 'Pending', NULL, NULL, NULL, 'Not Returned', NULL, 0);
+(96, 24, 56, '2025-11-13', '2025-11-20', 'Approved', 21, NULL, NULL, 'Not Returned', NULL, 0),
+(97, 16, 57, '2025-11-13', '2025-11-20', 'Rejected', 21, NULL, NULL, 'Not Returned', NULL, 1),
+(103, 16, 57, '2025-11-13', '2025-11-20', 'Rejected', NULL, NULL, NULL, 'Not Returned', NULL, 0);
 
 --
 -- Triggers `request_log`
@@ -91,6 +95,10 @@ CREATE TRIGGER `after_request_approval` AFTER UPDATE ON `request_log` FOR EACH R
     IF OLD.approval_status <> 'Approved' AND NEW.approval_status = 'Approved' THEN
         UPDATE asset
         SET asset_status = 'Borrowed'
+        WHERE asset_id = NEW.asset_id;
+    ELSEIF OLD.approval_status <> 'Rejected' AND NEW.approval_status = 'Rejected' THEN
+        UPDATE asset
+        SET asset_status = 'Available'
         WHERE asset_id = NEW.asset_id;
     END IF;
 
@@ -122,7 +130,9 @@ INSERT INTO `user` (`user_id`, `email`, `username`, `password`, `role`) VALUES
 (19, 'Aom@gmail.com', 'Aom', '$2b$10$3CTAIxOLOfPkBHv9FoVSiutMqOapQi9FdT//aU0r.zo502wnZ8j1K', 1),
 (21, 'lender@gmail.com', 'lender', '$2b$10$ZPWz1wLI844NvtZdnHubRu7FXGbWTf92tkiKSxnQNZjWQ5gshRf3.', 3),
 (22, 'p@gmail.com', 'p', '$2b$10$strGIlOEeJRKzo4iLWtFMuTHOtRkAk1gI//X3TLSRsWrHKyGilhR.', 1),
-(23, 'bb@gmail.com', 'bb', '$2b$10$mL2HImMFTXKWpxCqZoWFY.EdDDQ9DbOupvsr8WYF6VBLUxYo2JNVa', 1);
+(23, 'bb@gmail.com', 'bb', '$2b$10$mL2HImMFTXKWpxCqZoWFY.EdDDQ9DbOupvsr8WYF6VBLUxYo2JNVa', 1),
+(24, 'Time@gmail.com', 'Time', '$2b$10$Co2M8qLO1BsSwNBtWKSZ5.Dj7OWe9.ZduKrQpQ5vAUmdUu4o7OFsS', 1),
+(25, 'staff@gmail.com', 'staff', '$2b$10$MI4byqUv.34a25ScvxfzhOaCsyAnltZHRmtM/292NCjZ8F85.IYh2', 2);
 
 --
 -- Indexes for dumped tables
@@ -159,19 +169,19 @@ ALTER TABLE `user`
 -- AUTO_INCREMENT for table `asset`
 --
 ALTER TABLE `asset`
-  MODIFY `asset_id` smallint(6) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=58;
+  MODIFY `asset_id` smallint(6) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=60;
 
 --
 -- AUTO_INCREMENT for table `request_log`
 --
 ALTER TABLE `request_log`
-  MODIFY `request_id` smallint(6) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=91;
+  MODIFY `request_id` smallint(6) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=104;
 
 --
 -- AUTO_INCREMENT for table `user`
 --
 ALTER TABLE `user`
-  MODIFY `user_id` smallint(6) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=24;
+  MODIFY `user_id` smallint(6) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=26;
 
 --
 -- Constraints for dumped tables
