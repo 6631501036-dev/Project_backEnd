@@ -704,6 +704,58 @@ app.put("/staff/returnAsset/:request_id", (req, res) => {
 // =======================================================
 //  🟢 LENDER API SECTION 
 // =======================================================
+// GET Pending Requests for Lender
+app.get("/lender/pending-requests", (req, res) => { 
+    
+    const sql = `
+        SELECT 
+            rl.request_id,
+            a.asset_name,
+            a.image AS asset_image,
+            u.username AS borrower_name,
+            rl.borrow_date
+        FROM request_log rl
+        JOIN asset a ON rl.asset_id = a.asset_id
+        JOIN user u ON rl.borrower_id = u.user_id
+        WHERE rl.approval_status = 'Pending'
+        ORDER BY rl.borrow_date ASC;
+    `;
+
+    con.query(sql, (err, results) => {
+        if (err) {
+            console.error("Database Error:", err);
+            return res.status(500).json({ success: false, message: "Database error" });
+        }
+        res.json({ success: true, pendingRequests: results });
+    });
+});
+
+//API สำหรับ Dashboard lender
+// ✅ Fixed lender dashboard stats
+app.get("/lender/asset-stats", (req, res) => {
+  const sql = `
+    SELECT
+        COUNT(*) AS total,
+        SUM(CASE WHEN asset_status = 'Available' THEN 1 ELSE 0 END) AS available,
+        SUM(CASE WHEN asset_status = 'Pending' THEN 1 ELSE 0 END) AS pending,
+        SUM(CASE WHEN asset_status = 'Borrowed' THEN 1 ELSE 0 END) AS borrowed,
+        SUM(CASE WHEN asset_status = 'Disabled' THEN 1 ELSE 0 END) AS disabled
+    FROM asset;
+  `;
+
+  con.query(sql, (err, results) => {
+    if (err) {
+      console.error("Database Error (Stats):", err);
+      return res.status(500).json({ success: false, message: "Database error" });
+    }
+
+    const stats = results && results.length > 0 ? results[0] : null;
+    console.log("Lender Asset Stats:", stats); // <-- เพิ่มบรรทัดนี้ debug
+
+    res.json({ success: true, stats });
+  });
+});
+
 
 //get lender
 app.get("/lender", verifyUser, (req, res) => {
@@ -804,18 +856,32 @@ app.put("/lender/borrowingRequest/:request_id/approve", (req, res) => {
     });
 });
 
-// Reject Request
+
+// Reject Request (No Transaction Version)
 app.put("/lender/borrowingRequest/:request_id/reject", (req, res) => {
     const { request_id } = req.params;
-    const { lender_id } = req.body; // Pass lender_id in request body
+    const { lender_id } = req.body; 
 
-    con.beginTransaction((err) => {
+    // [แก้ไข] เราจะไม่ใช้ con.beginTransaction
+    // เราจะยิง 3 คำสั่งต่อกัน (Chain)
+
+    // Step 1: ดึง asset_id ออกมาก่อน (ยังจำเป็น)
+    const getAssetQuery = "SELECT asset_id FROM request_log WHERE request_id = ? AND approval_status = 'Pending'";
+    
+    con.query(getAssetQuery, [request_id], (err, result) => {
         if (err) {
-            console.error("Transaction error:", err);
+            console.error("REJECT Step 1 Error (getAssetQuery):", err);
             return res.status(500).send("Internal Server Error");
         }
+        if (result.length === 0) {
+            return res.status(400).send("Request not found or already processed");
+        }
+        
+        // เก็บ asset_id ไว้
+        const asset_id = result[0].asset_id;
+        console.log(`>>> [REJECT - NoTx] Got asset_id: ${asset_id}`);
 
-        // Step 1: Reject the request
+        // Step 2: อัปเดต request_log เป็น 'Rejected'
         const updateRequestQuery = `
             UPDATE request_log 
             SET approval_status = 'Rejected', lender_id = ?
@@ -824,43 +890,31 @@ app.put("/lender/borrowingRequest/:request_id/reject", (req, res) => {
 
         con.query(updateRequestQuery, [lender_id, request_id], (err, result) => {
             if (err) {
-                return con.rollback(() => {
-                    console.error("Error rejecting request:", err);
-                    res.status(500).send("Internal Server Error");
-                });
+                console.error("REJECT Step 2 Error (updateRequestQuery):", err);
+                return res.status(500).send("Internal Server Error");
             }
-
             if (result.affectedRows === 0) {
-                return con.rollback(() => {
-                    res.status(400).send("Request not found or already processed");
-                });
+                return res.status(400).send("Request already processed (log)");
             }
+            
+            console.log(`>>> [REJECT - NoTx] Updated request_log. Now updating asset...`);
 
-            // Step 2: Update asset_status to "Available"
+            // Step 3: อัปเดต asset เป็น 'Available'
             const updateAssetQuery = `
                 UPDATE asset 
                 SET asset_status = 'Available' 
-                WHERE asset_id = (SELECT asset_id FROM request_log WHERE request_id = ?)
+                WHERE asset_id = ?
             `;
 
-            con.query(updateAssetQuery, [request_id], (err, result) => {
+            con.query(updateAssetQuery, [asset_id], (err, result) => {
                 if (err) {
-                    return con.rollback(() => {
-                        console.error("Error updating asset status:", err);
-                        res.status(500).send("Internal Server Error");
-                    });
+                    console.error("REJECT Step 3 Error (updateAssetQuery):", err);
+                    // แม้ Step 3 พลาด เราก็ทำอะไรไม่ได้แล้ว (เพราะไม่มี Rollback)
+                    return res.status(500).send("Internal Server Error (Step 3)");
                 }
-
-                con.commit((err) => {
-                    if (err) {
-                        return con.rollback(() => {
-                            console.error("Transaction commit error:", err);
-                            res.status(500).send("Internal Server Error");
-                        });
-                    }
-
-                    res.json({ message: "Request rejected successfully, asset marked as Available" });
-                });
+                
+                console.log(`>>> [REJECT - NoTx] Asset updated to Available!`);
+                res.json({ message: "Request rejected successfully (No Transaction)" });
             });
         });
     });
