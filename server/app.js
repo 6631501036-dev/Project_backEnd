@@ -760,7 +760,7 @@ app.put("/staff/returnAsset/:request_id", (req, res) => {
 //  🟢 LENDER API SECTION 
 // =======================================================
 // GET Pending Requests for Lender
-app.get("/lender/pending-requests", (req, res) => { 
+app.get("/lender/pending-requests", verifyUser, (req, res) => { 
     
     const sql = `
         SELECT 
@@ -787,7 +787,7 @@ app.get("/lender/pending-requests", (req, res) => {
 
 //API สำหรับ Dashboard lender
 // ✅ Fixed lender dashboard stats
-app.get("/lender/asset-stats", (req, res) => {
+app.get("/lender/asset-stats", verifyUser, (req, res) => {
   const sql = `
     SELECT
         COUNT(*) AS total,
@@ -830,7 +830,7 @@ app.get("/lender", verifyUser, (req, res) => {
   });
 });
 // Approve Request (lender)
-app.put("/lender/borrowingRequest/:request_id/approve", (req, res) => {
+app.put("/lender/borrowingRequest/:request_id/approve", verifyUser, (req, res) => {
     const { request_id } = req.params;
     const { lender_id } = req.body; // Pass lender_id in request body
 
@@ -913,7 +913,7 @@ app.put("/lender/borrowingRequest/:request_id/approve", (req, res) => {
 
 
 // Reject Request (No Transaction Version)
-app.put("/lender/borrowingRequest/:request_id/reject", (req, res) => {
+app.put("/lender/borrowingRequest/:request_id/reject", verifyUser, (req, res) => {
     const { request_id } = req.params;
     const { lender_id } = req.body; 
 
