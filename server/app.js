@@ -367,6 +367,7 @@ app.get("/api/student/status/:userId", (req, res) => {
     WHEN rl.return_status = 'Requested Return' THEN 'Requested Return'
     WHEN rl.return_status = 'Returned' THEN 'Returned'
     WHEN rl.approval_status = 'Pending' THEN 'Pending'
+    WHEN rl.approval_status = 'Rejected' THEN 'Rejected'
     WHEN rl.approval_status = 'Approved' AND rl.return_status = 'Not Returned' THEN 'Borrowed'
     ELSE a.asset_status
   END AS asset_status,
@@ -455,11 +456,13 @@ app.get("/api/staff/history", (req, res) => {
       r.return_date,
       r.approval_status AS request_status,
       u.username AS borrower_name,
-      staff.username AS staff_name
+      staff.username AS staff_name,
+      lender.username AS lender_name
     FROM request_log r
     JOIN asset a ON r.asset_id = a.asset_id
     LEFT JOIN user u ON r.borrower_id = u.user_id
     LEFT JOIN user staff ON r.staff_id = staff.user_id
+    RIGHT JOIN user lender ON r.lender_id = lender.user_id 
     ORDER BY r.request_id DESC;
   `;
 
@@ -939,7 +942,7 @@ app.put("/lender/borrowingRequest/:request_id/reject", verifyUser, (req, res) =>
         // Step 2: อัปเดต request_log เป็น 'Rejected'
         const updateRequestQuery = `
             UPDATE request_log 
-            SET approval_status = 'Rejected', lender_id = ?
+            SET approval_status = 'Rejected', can_borrow_today = 1, lender_id = ?
             WHERE request_id = ? AND approval_status = 'Pending'
         `;
 
