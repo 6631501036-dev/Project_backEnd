@@ -415,34 +415,6 @@ app.get("/api/student/history/:userId", (req, res) => {
   });
 });
 
-// Staff History
-app.get("/api/staff/history", (req, res) => {    
-  const sql = `
-    SELECT 
-      r.request_id,
-      a.asset_name,
-      r.borrow_date,
-      r.return_date,
-      r.approval_status AS request_status,
-      r.return_status,
-      borrower.username AS borrower_name,
-      lender.username AS lender_name,
-      staff.username AS staff_name
-    FROM request_log r
-    JOIN asset a ON r.asset_id = a.asset_id
-    LEFT JOIN user borrower ON r.borrower_id = borrower.user_id
-    LEFT JOIN user lender ON r.lender_id = lender.user_id
-    LEFT JOIN user staff ON r.staff_id = staff.user_id
-    ORDER BY r.request_id ASC;
-  `;
-
-  con.query(sql, (err, results) => {
-    if (err) return res.status(500).json({ error: "Database error" });
-    res.json(results);
-  });
-});
-
-//Lender History
 app.get("/api/lender/history/:userId", (req, res) => {
   const userId = req.params.userId;
   const sql = `
@@ -452,23 +424,53 @@ app.get("/api/lender/history/:userId", (req, res) => {
       r.borrow_date,
       r.return_date,
       r.approval_status AS request_status,
-      r.return_status,
       lender.username AS lender_name,
-      staff.username AS staff_name
+      staff.username AS staff_name,
+      u.username AS borrower_name
     FROM request_log r
     JOIN asset a ON r.asset_id = a.asset_id
     LEFT JOIN user lender ON r.lender_id = lender.user_id
     LEFT JOIN user staff ON r.staff_id = staff.user_id
-    WHERE r.lender_id = ?
-    ORDER BY r.request_id ASC;
+    LEFT JOIN user u ON r.borrower_id = u.user_id
+    WHERE (r.lender_id = ? OR r.staff_id = ?)
+    ORDER BY r.borrow_date DESC;
   `;
 
-  con.query(sql, [userId], (err, results) => {
-    if (err) return res.status(500).json({ error: "Database error" });
+  con.query(sql, [userId, userId], (err, results) => {
+    if (err) {
+      console.error("DB Error /api/lender/history:", err);
+      return res.status(500).json({ error: "Database error" });
+    }
     res.json(results);
   });
 });
 
+app.get("/api/staff/history", (req, res) => {
+  const userId = req.params.userId;
+  const sql = `
+    SELECT 
+      r.request_id,
+      a.asset_name,
+      r.borrow_date,
+      r.return_date,
+      r.approval_status AS request_status,
+      u.username AS borrower_name,
+      staff.username AS staff_name
+    FROM request_log r
+    JOIN asset a ON r.asset_id = a.asset_id
+    LEFT JOIN user u ON r.borrower_id = u.user_id
+    LEFT JOIN user staff ON r.staff_id = staff.user_id
+    ORDER BY r.borrow_date DESC;
+  `;
+
+  con.query(sql, [userId], (err, results) => {
+    if (err) {
+      console.error("DB Error /api/staff/history:", err);
+      return res.status(500).json({ error: "Database error" });
+    }
+    res.json(results);
+  });
+});
 
 // =======================================================
 //  🟢 STAFF API SECTION 
