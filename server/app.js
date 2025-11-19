@@ -42,7 +42,7 @@ function verifyUser(req, res, next) {
            res.status(403).send('Forbidden: Invalid role');
        }
        else {
-           // remember the decoded token
+           // remember the decoded token          
            req.decoded = decoded;
            // go further to the route
            next();
@@ -172,14 +172,14 @@ app.get("/api/user/:userId", (req, res) => {
         if (err) return res.status(500).json({ error: "Database error" });
         if (results.length === 0) return res.status(404).json({ error: "User not found" });
         res.json(results[0]);
-    });
+   });
 });
 
 ////////////////////////////////////////////////////////////
 // 🟢 ASSET (Student Home)
 ////////////////////////////////////////////////////////////
 app.get("/api/student/asset", (req, res) => {
-  const borrowerId = req.query.borrower_id; 
+  const borrowerId = req.query.borrower_id;   
   if (!borrowerId) {
     return res.status(400).json({ success: false, message: "Missing borrower_id" });
   }
@@ -358,8 +358,8 @@ app.put("/api/student/returnAsset/:request_id",(req, res) => {
 ////////////////////////////////////////////////////////////
 app.get("/api/student/status/:userId", (req, res) => {
   const userId = req.params.userId;
-  const sql = `
- SELECT 
+const sql = `
+SELECT 
   rl.request_id,
   rl.borrow_date AS request_date,
   a.asset_name,
@@ -368,18 +368,17 @@ app.get("/api/student/status/:userId", (req, res) => {
     WHEN rl.return_status = 'Returned' THEN 'Returned'
     WHEN rl.approval_status = 'Pending' THEN 'Pending'
     WHEN rl.approval_status = 'Approved' AND rl.return_status = 'Not Returned' THEN 'Borrowed'
+    WHEN rl.approval_status = 'Rejected' THEN 'Rejected'
     ELSE a.asset_status
   END AS asset_status,
   rl.can_borrow_today
 FROM request_log rl
 JOIN asset a ON rl.asset_id = a.asset_id
- WHERE rl.request_id = (
-      SELECT MAX(request_id)
-      FROM request_log
-      WHERE borrower_id = ?
-    );
-
-;
+WHERE rl.request_id = (
+  SELECT MAX(request_id)
+  FROM request_log
+  WHERE borrower_id = ?
+);
 `;
   con.query(sql, [userId], (err, results) => {
     if (err) return res.status(500).json({ error: "Database error" });
@@ -389,6 +388,7 @@ JOIN asset a ON rl.asset_id = a.asset_id
 ////////////////////////////////////////////////////////////
 // 🟢 HISTORY PAGE
 ////////////////////////////////////////////////////////////
+// Student History
 app.get("/api/student/history/:userId", (req, res) => {
   const userId = req.params.userId;
   const sql = `
@@ -415,6 +415,59 @@ app.get("/api/student/history/:userId", (req, res) => {
   });
 });
 
+// Staff History
+app.get("/api/staff/history", (req, res) => {    
+  const sql = `
+    SELECT 
+      r.request_id,
+      a.asset_name,
+      r.borrow_date,
+      r.return_date,
+      r.approval_status AS request_status,
+      r.return_status,
+      borrower.username AS borrower_name,
+      lender.username AS lender_name,
+      staff.username AS staff_name
+    FROM request_log r
+    JOIN asset a ON r.asset_id = a.asset_id
+    LEFT JOIN user borrower ON r.borrower_id = borrower.user_id
+    LEFT JOIN user lender ON r.lender_id = lender.user_id
+    LEFT JOIN user staff ON r.staff_id = staff.user_id
+    ORDER BY r.request_id ASC;
+  `;
+
+  con.query(sql, (err, results) => {
+    if (err) return res.status(500).json({ error: "Database error" });
+    res.json(results);
+  });
+});
+
+//Lender History
+app.get("/api/lender/history/:userId", (req, res) => {
+  const userId = req.params.userId;
+  const sql = `
+    SELECT 
+      r.request_id,
+      a.asset_name,
+      r.borrow_date,
+      r.return_date,
+      r.approval_status AS request_status,
+      r.return_status,
+      lender.username AS lender_name,
+      staff.username AS staff_name
+    FROM request_log r
+    JOIN asset a ON r.asset_id = a.asset_id
+    LEFT JOIN user lender ON r.lender_id = lender.user_id
+    LEFT JOIN user staff ON r.staff_id = staff.user_id
+    WHERE r.lender_id = ?
+    ORDER BY r.request_id ASC;
+  `;
+
+  con.query(sql, [userId], (err, results) => {
+    if (err) return res.status(500).json({ error: "Database error" });
+    res.json(results);
+  });
+});
 
 
 // =======================================================
@@ -578,7 +631,7 @@ app.put("/staff/editAsset/:asset_id/enable", (req, res) => {
 
 // DELETE Asset
 app.delete("/staff/deleteAsset/:id", (req, res) => {
-    const assetId = req.params.id;
+    const assetId = req.params.id;    
     const sql = "DELETE FROM asset WHERE asset_id = ?";
 
     con.query(sql, [assetId], (err, result) => {
@@ -884,8 +937,8 @@ app.put("/lender/borrowingRequest/:request_id/reject", (req, res) => {
         // Step 2: อัปเดต request_log เป็น 'Rejected'
         const updateRequestQuery = `
             UPDATE request_log 
-            SET approval_status = 'Rejected', lender_id = ?
-            WHERE request_id = ? AND approval_status = 'Pending'
+            SET approval_status = 'Rejected', can_borrow_today = 1 , lender_id = ?
+            WHERE request_id = ? AND approval_status = 'Pending' 
         `;
 
         con.query(updateRequestQuery, [lender_id, request_id], (err, result) => {
