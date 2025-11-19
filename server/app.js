@@ -476,7 +476,7 @@ app.get("/api/staff/history", (req, res) => {
 //  🟢 STAFF API SECTION 
 // =======================================================
 // Add Asset
-app.post("/staff/addAsset", upload.single("image"), (req, res) => {
+app.post("/staff/addAsset", verifyUser, upload.single("image"), (req, res) => {
     const { name, description } = req.body;
     const imagePath = req.file ? `/public/image/${req.file.filename}` : "/public/image/default.jpg";
 
@@ -503,7 +503,7 @@ app.post("/staff/addAsset", upload.single("image"), (req, res) => {
 });
 
 // Edit Asset 
-app.put("/staff/editAsset/:id", upload.single("image"), (req, res) => {
+app.put("/staff/editAsset/:id", verifyUser, upload.single("image"), (req, res) => {
     const assetId = req.params.id;
     const { name, description } = req.body;
 
@@ -632,7 +632,7 @@ app.put("/staff/editAsset/:asset_id/enable", (req, res) => {
 });
 
 // DELETE Asset
-app.delete("/staff/deleteAsset/:id", (req, res) => {
+app.delete("/staff/deleteAsset/:id", verifyUser, (req, res) => {
     const assetId = req.params.id;
     const sql = "DELETE FROM asset WHERE asset_id = ?";
 
@@ -649,7 +649,7 @@ app.delete("/staff/deleteAsset/:id", (req, res) => {
 });
 
 //get assets
-app.get("/assets", (req, res) => {
+app.get("/assets", verifyUser, (req, res) => {
   // ไม่ต้อง verifyToken
   const sql = "SELECT * FROM asset";
   con.query(sql, (err, result) => {
@@ -672,7 +672,7 @@ app.get("/staff", verifyUser, (req, res) => {
 });
 
 //  Get Requests for Staff
-app.get("/staff/request/:staff_id", (req, res) => {
+app.get("/staff/request/:staff_id", verifyUser, (req, res) => {
   const staffId = req.params.staff_id;
   const sql = `
     SELECT 
@@ -698,7 +698,7 @@ app.get("/staff/request/:staff_id", (req, res) => {
 ////////////////////////////////////////////////////////////
 // 🟢 STAFF RETURN ASSET (PUT)
 ////////////////////////////////////////////////////////////
-app.put("/staff/returnAsset/:request_id", (req, res) => {
+app.put("/staff/returnAsset/:request_id" , verifyUser, (req, res) => {
     const { request_id } = req.params;
     const { staff_id } = req.body;
 
@@ -980,7 +980,7 @@ app.put("/lender/borrowingRequest/:request_id/reject", verifyUser, (req, res) =>
 // =======================================================
 
 // Staff Dashboard
-app.get("/staff/dashboard/:staff_id", (req, res) => {
+app.get("/staff/dashboard/:staff_id", verifyUser, (req, res) => {
   const staffId = req.params.staff_id;
 
   const sql = `
@@ -1018,12 +1018,12 @@ app.post("/api/notifyReturn", (req, res) => {
 });
 
 // 👀 ให้ staff ดูจำนวนแจ้งเตือน
-app.get("/api/returnCount", (req, res) => {
+app.get("/api/returnCount", verifyUser, (req, res) => {
   res.json({ count: returnNotifications });
 });
 
 // 🧹 ล้างแจ้งเตือนเมื่อ staff เปิดดูแล้ว
-app.delete("/api/clearReturnNotifications", (req, res) => {
+app.delete("/api/clearReturnNotifications", verifyUser, (req, res) => {
   returnNotifications = 0;
   console.log("✅ ล้างแจ้งเตือนทั้งหมดแล้ว");
   res.json({ success: true });
