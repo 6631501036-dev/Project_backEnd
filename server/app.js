@@ -460,7 +460,7 @@ app.get("/api/staff/history", (req, res) => {
     JOIN asset a ON r.asset_id = a.asset_id
     LEFT JOIN user u ON r.borrower_id = u.user_id
     LEFT JOIN user staff ON r.staff_id = staff.user_id
-    ORDER BY r.borrow_date DESC;
+    ORDER BY r.request_id DESC;
   `;
 
   con.query(sql, [userId], (err, results) => {
@@ -553,7 +553,7 @@ app.put("/staff/editAsset/:asset_id/disable", (req, res) => {
     const currentStatus = assetResult[0].asset_status;
 
     // ถ้า Borrowed → ห้าม disable
-    if (currentStatus === "Borrowed") {
+    if (currentStatus === "Borrowed" || currentStatus === "Pending") {
       return res.status(400).json({
         success: false,
         message: `${assetName} is currently Borrowed and cannot be disabled.`,
